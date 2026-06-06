@@ -1,0 +1,33 @@
+{
+  "name": "beautiful-mermaid-composer",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "A live composer that turns Mermaid diagrams into beautiful, brand-themed, social-ready images — with theme presets, fonts, curved connectors, background images, drag/resize placement, ASCII export, and one-click PNG/SVG export.",
+  "type": "module",
+  "keywords": [
+    "mermaid",
+    "diagram",
+    "svg",
+    "ascii",
+    "editor",
+    "composer",
+    "theming",
+    "social-media",
+    "flowchart"
+  ],
+  "scripts": {
+    "editor": "bun run bm-editor.ts --serve",
+    "preview": "bun run bm-preview.ts --serve",
+    "build": "bun run bm-editor.ts && bun run bm-preview.ts",
+    "build:editor": "bun run bm-editor.ts",
+    "build:preview": "bun run bm-preview.ts"
+  },
+  "dependencies": {
+    "elkjs": "^0.11.0",
+    "entities": "^7.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.9",
+    "typescript": "^5.9.3"
+  }
+}

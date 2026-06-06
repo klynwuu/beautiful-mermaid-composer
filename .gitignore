@@ -1,0 +1,65 @@
+# ── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.*
+
+# ── Build output ────────────────────────────────────────────────────────────
+dist/
+build/
+site/
+out/
+
+# Generated standalone pages (rebuilt with `bun run build`)
+bm-editor.html
+bm-preview.html
+*.html
+
+# ── Logs ────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+bun-debug.log*
+
+# ── Caches & tooling ────────────────────────────────────────────────────────
+.cache/
+.tmp/
+.temp/
+*.tsbuildinfo
+.eslintcache
+
+# ── Environment / secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Editors / IDEs ──────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ── macOS ───────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+Icon?
+
+# ── Windows ─────────────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
