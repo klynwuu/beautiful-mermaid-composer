@@ -125,7 +125,7 @@ const html = `<!DOCTYPE html>
   /* Frosted backdrop for "glass" themes: a duplicate of the frame's background
      image, blurred, then masked to the diagram's node shapes so node boxes read
      as frosted glass while the gaps stay sharp/clear. Sits under the SVG. */
-  .frame-frost { position: absolute; inset: 0; pointer-events: none; z-index: 0; background-size: cover; background-position: center; filter: blur(14px) saturate(1.25); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; mask-mode: alpha; }
+  .frame-frost { position: absolute; inset: 0; pointer-events: none; z-index: 0; background-size: cover; background-position: center; filter: blur(22px) saturate(1.7); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; mask-mode: alpha; }
   .frame-diagram { position: absolute; z-index: 1; }
   .frame-diagram.fit { inset: 18px; display: flex; align-items: center; justify-content: center; }
   .frame-diagram.fit svg { max-width: 100%; max-height: 100%; height: auto; }
