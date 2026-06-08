@@ -41,6 +41,13 @@ export interface BrandTheme {
   label: string
   /** Recommended Google font for diagrams in this identity. */
   font: string
+  /**
+   * "Glass" identity: surfaces are translucent and meant to overlay a
+   * background image. The editor treats these specially — it shows a
+   * checkerboard when no image is loaded and renders a real per-node frosted
+   * backdrop blur in the live preview. Defaults to false.
+   */
+  glass?: boolean
   /** Light variant colors. */
   light: DiagramColors
   /** Dark variant colors. */
@@ -57,8 +64,21 @@ const PERPLEXITY: BrandTheme = {
   dark: THEMES['perplexity-dark']!,
 }
 
+// Transparent Perplexity (2026) — glass overlay identity. Translucent frosted
+// nodes designed to sit on top of a background image so the photo reads through
+// the diagram. See the THEMES entries for the color rationale.
+const TRANSPARENT_PERPLEXITY: BrandTheme = {
+  id: 'transparent-perplexity',
+  label: 'Transparent Perplexity',
+  font: 'Space Grotesk',
+  glass: true,
+  light: THEMES['transparent-perplexity']!,
+  dark: THEMES['transparent-perplexity-dark']!,
+}
+
 export const BRANDS: BrandTheme[] = [
   PERPLEXITY,
+  TRANSPARENT_PERPLEXITY,
   // ← add new BrandTheme objects here (see TEMPLATE above)
 ]
 

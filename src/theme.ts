@@ -167,6 +167,34 @@ export const THEMES: Record<string, DiagramColors> = {
     line: '#1A6872', accent: '#35BDC8', muted: '#FBFAF4',
     surface: '#2CA0AB', border: '#35BDC8',
   },
+  // Transparent Perplexity (2026) — a "glass" identity built to overlay a
+  // background image so the photo reads *through* the diagram. `bg` is
+  // intentionally transparent (gaps stay clear, showing the photo), while node
+  // boxes are translucent "material" panels. The editor adds a real per-node
+  // backdrop blur in the live preview (PNG/SVG export stays flat translucency).
+  //
+  // Tuned to Apple's Materials / Liquid Glass legibility guidance: the *material
+  // carries the contrast*, not raw transparency. Each variant is a tinted,
+  // blurred panel rather than near-clear glass, so foreground labels stay
+  // legible over any photo:
+  //   - dark variant  → a DARK translucent material (rgba teal-black ~0.46)
+  //     with vibrant white ink + a bright specular white rim. White text reads
+  //     because the panel darkens the backdrop instead of lightening it.
+  //   - light variant → a LIGHT translucent material (rgba white ~0.62) with
+  //     near-black ink + a white specular rim, for overlaying bright photos.
+  // `line`/`muted` use vibrant high-contrast values; the frost layer adds a
+  // saturation boost (vibrancy) on the blurred backdrop. Node gaps remain fully
+  // clear so the photo is still obviously visible between panels.
+  'transparent-perplexity': {
+    bg: 'transparent', fg: '#0A1414',
+    line: 'rgba(9,23,23,0.52)', accent: '#091717', muted: 'rgba(9,23,23,0.66)',
+    surface: 'rgba(255,255,255,0.62)', border: 'rgba(255,255,255,0.72)',
+  },
+  'transparent-perplexity-dark': {
+    bg: 'transparent', fg: '#FFFFFF',
+    line: 'rgba(255,255,255,0.58)', accent: '#FFFFFF', muted: 'rgba(255,255,255,0.74)',
+    surface: 'rgba(11,21,23,0.46)', border: 'rgba(255,255,255,0.42)',
+  },
 } as const
 
 export type ThemeName = keyof typeof THEMES

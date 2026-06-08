@@ -1,6 +1,6 @@
 {
   "name": "beautiful-mermaid-composer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "description": "A live composer that turns Mermaid diagrams into beautiful, brand-themed, social-ready images — with theme presets, fonts, curved connectors, background images, drag/resize placement, ASCII export, and one-click PNG/SVG export.",
   "type": "module",
