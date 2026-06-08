@@ -167,6 +167,27 @@ export const THEMES: Record<string, DiagramColors> = {
     line: '#1A6872', accent: '#35BDC8', muted: '#FBFAF4',
     surface: '#2CA0AB', border: '#35BDC8',
   },
+  // Transparent Perplexity (2026) — a "glass" identity built to overlay a
+  // background image so the photo reads *through* the diagram. Every surface is
+  // translucent (rgba), and `bg` is intentionally transparent: with no image
+  // loaded the editor shows a checkerboard; with one loaded the node boxes
+  // become frosted glass panels over it. The editor adds a real per-node
+  // backdrop blur in the live preview (PNG/SVG export stays flat translucency).
+  //
+  // The dark variant is hub-exact: rgba(255,255,255,0.10) fills with faint
+  // white inset borders and off-white ink — matching the cards on
+  // perplexity.ai/hub. The light variant tints the glass whiter and uses dark
+  // ink, for overlaying lighter / brighter photos.
+  'transparent-perplexity': {
+    bg: 'transparent', fg: '#091717',
+    line: 'rgba(9,23,23,0.42)', accent: '#091717', muted: 'rgba(9,23,23,0.64)',
+    surface: 'rgba(255,255,255,0.42)', border: 'rgba(255,255,255,0.60)',
+  },
+  'transparent-perplexity-dark': {
+    bg: 'transparent', fg: '#FAF8F5',
+    line: 'rgba(255,255,255,0.45)', accent: '#FFFFFF', muted: 'rgba(250,248,245,0.78)',
+    surface: 'rgba(255,255,255,0.10)', border: 'rgba(255,255,255,0.20)',
+  },
 } as const
 
 export type ThemeName = keyof typeof THEMES

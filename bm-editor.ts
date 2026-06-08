@@ -122,7 +122,11 @@ const html = `<!DOCTYPE html>
   .frame { position: relative; box-shadow: 0 10px 40px -12px rgba(9,23,23,.35); border: 1px solid rgba(9,23,23,.08); background-size: cover; background-position: center; }
   .frame.plain { box-shadow: none; border-color: transparent; }
   .frame.checker { background-color: #fff; background-image: linear-gradient(45deg,#e6e6e6 25%,transparent 25%),linear-gradient(-45deg,#e6e6e6 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e6e6e6 75%),linear-gradient(-45deg,transparent 75%,#e6e6e6 75%); background-size: 22px 22px; background-position: 0 0,0 11px,11px -11px,-11px 0; }
-  .frame-diagram { position: absolute; }
+  /* Frosted backdrop for "glass" themes: a duplicate of the frame's background
+     image, blurred, then masked to the diagram's node shapes so node boxes read
+     as frosted glass while the gaps stay sharp/clear. Sits under the SVG. */
+  .frame-frost { position: absolute; inset: 0; pointer-events: none; z-index: 0; background-size: cover; background-position: center; filter: blur(14px) saturate(1.25); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; mask-mode: alpha; }
+  .frame-diagram { position: absolute; z-index: 1; }
   .frame-diagram.fit { inset: 18px; display: flex; align-items: center; justify-content: center; }
   .frame-diagram.fit svg { max-width: 100%; max-height: 100%; height: auto; }
   .frame-diagram:not(.fit) { cursor: move; outline: 1.5px solid rgba(32,128,141,.6); }
@@ -259,6 +263,55 @@ ${bundleJs}
       var b = (M.BRANDS || []).find(function (x) { return x.id === id; });
       return b ? b.font : null;
     }
+    // True for "glass" themes (translucent surfaces meant to overlay an image).
+    function isGlass() {
+      var id = els.theme.value.split('::')[0];
+      var b = (M.BRANDS || []).find(function (x) { return x.id === id; });
+      return !!(b && b.glass);
+    }
+
+    // ── Frosted backdrop (glass themes) ──────────────────────────────────
+    // Renders a *mask* SVG where only node fills are opaque white, used to clip
+    // a blurred copy of the background image to the node shapes. Real per-node
+    // backdrop blur in the live preview; export stays flat (see exportPNG).
+    var MASK_PALETTE = {
+      bg: 'transparent', fg: 'transparent', line: 'transparent',
+      accent: 'transparent', muted: 'transparent',
+      surface: '#fff', border: 'transparent'
+    };
+    function renderMask() {
+      var opts = Object.assign({}, MASK_PALETTE, {
+        font: els.font.value,
+        edgeStyle: els.curved.checked ? 'curved' : 'sharp',
+        transparent: true
+      });
+      return M.renderMermaidSVGAsync(els.code.value, opts).then(function (svg) {
+        return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      });
+    }
+    function buildFrost(frame) {
+      var old = frame.querySelector('.frame-frost'); if (old) old.remove();
+      if (!isGlass() || !state.bgUrl || els.transparent.checked) return;
+      var frost = document.createElement('div'); frost.className = 'frame-frost';
+      frost.style.backgroundImage = 'url(' + state.bgUrl + ')';
+      frame.insertBefore(frost, frame.firstChild);
+      renderMask().then(function (url) {
+        frost.style.webkitMaskImage = 'url("' + url + '")';
+        frost.style.maskImage = 'url("' + url + '")';
+        updateFrost();
+      });
+    }
+    // Align the frost mask with the diagram's current on-screen box (works for
+    // both contained "fit" and freely placed modes).
+    function updateFrost() {
+      var frame = state.frameEl; if (!frame) return;
+      var frost = frame.querySelector('.frame-frost'); if (!frost || !state.svgEl) return;
+      var fr = frame.getBoundingClientRect(), sr = state.svgEl.getBoundingClientRect();
+      var x = (sr.left - fr.left) + 'px', y = (sr.top - fr.top) + 'px';
+      var size = sr.width + 'px ' + sr.height + 'px';
+      frost.style.webkitMaskPosition = x + ' ' + y; frost.style.maskPosition = x + ' ' + y;
+      frost.style.webkitMaskSize = size; frost.style.maskSize = size;
+    }
     function toast(msg) {
       els.toast.textContent = msg; els.toast.classList.add('show');
       clearTimeout(toast._t); toast._t = setTimeout(function () { els.toast.classList.remove('show'); }, 1400);
@@ -283,6 +336,7 @@ ${bundleJs}
       fw = Math.max(40, fw); fh = Math.max(40, fh);
       frame.style.width = fw + 'px';
       frame.style.height = fh + 'px';
+      updateFrost();
     }
 
     // Free placement is enabled for fixed ratios (room around the diagram).
@@ -303,6 +357,7 @@ ${bundleJs}
       hold.style.width = w + 'px'; hold.style.height = h + 'px';
       hold.style.left = (state.geom.cxN * fw - w / 2) + 'px';
       hold.style.top = (state.geom.cyN * fh - h / 2) + 'px';
+      updateFrost();
     }
 
     // Position the diagram inside the frame: contained (fit) or free (ratios).
@@ -314,6 +369,7 @@ ${bundleJs}
         hold.classList.add('fit'); hold.tabIndex = -1;
         hold.style.left = hold.style.top = hold.style.width = hold.style.height = '';
         removeHandles(hold);
+        updateFrost();
         return;
       }
       hold.classList.remove('fit'); hold.style.inset = ''; hold.tabIndex = 0;
@@ -405,6 +461,9 @@ ${bundleJs}
       frame.style.background = '';
       if (els.transparent.checked) { frame.classList.add('checker'); }
       else if (state.bgUrl) { frame.style.backgroundImage = 'url(' + state.bgUrl + ')'; frame.style.backgroundSize = 'cover'; frame.style.backgroundPosition = 'center'; }
+      // Glass themes have a transparent bg by design — with no image loaded, show
+      // the checkerboard so it's clear the diagram is meant to overlay a photo.
+      else if (isGlass()) { frame.classList.add('checker'); }
       else { var c = colors(); frame.style.background = c ? c.bg : '#fff'; }
       updateChrome(frame);
     }
@@ -451,7 +510,7 @@ ${bundleJs}
         state.svgAspect = state.svgEl ? (state.svgEl.height.baseVal.value / state.svgEl.width.baseVal.value) : 0.66;
         hold.addEventListener('pointerdown', function (e) { startDrag(e, hold); });
         hold.addEventListener('dblclick', function () { if (interactive()) { state.geom = defaultGeom(frame.clientWidth, frame.clientHeight); applyGeom(hold, frame); } });
-        paintFrameBg(frame); sizeFrame(); positionDiagram();
+        paintFrameBg(frame); sizeFrame(); positionDiagram(); buildFrost(frame);
         els.status.textContent = '';
       }).catch(function (e) {
         if (my !== seq) return;
@@ -544,14 +603,14 @@ ${bundleJs}
       var reader = new FileReader();
       reader.onload = function () {
         state.bgUrl = reader.result;
-        loadImage(state.bgUrl).then(function (img) { state.bgImg = img; if (state.frameEl) { paintFrameBg(state.frameEl); } });
+        loadImage(state.bgUrl).then(function (img) { state.bgImg = img; if (state.frameEl) { paintFrameBg(state.frameEl); buildFrost(state.frameEl); } });
         els.bgName.textContent = f.name; els.bgClear.style.display = '';
       };
       reader.readAsDataURL(f);
     });
     els.bgClear.addEventListener('click', function () {
       state.bgUrl = null; state.bgImg = null; els.bgName.textContent = ''; els.bgClear.style.display = 'none';
-      els.bgFile.value = ''; if (state.frameEl) { paintFrameBg(state.frameEl); }
+      els.bgFile.value = ''; if (state.frameEl) { paintFrameBg(state.frameEl); buildFrost(state.frameEl); }
     });
 
     // ── Wire up controls ────────────────────────────────────────────────
@@ -561,7 +620,7 @@ ${bundleJs}
     els.font.addEventListener('change', render);
     els.curved.addEventListener('change', render);
     els.ratio.addEventListener('change', function () { state.geom = null; if (state.frameEl) { sizeFrame(); updateChrome(); positionDiagram(); } });
-    els.transparent.addEventListener('change', function () { if (state.frameEl) paintFrameBg(state.frameEl); });
+    els.transparent.addEventListener('change', function () { if (state.frameEl) { paintFrameBg(state.frameEl); buildFrost(state.frameEl); } });
     els.shadow.addEventListener('change', function () { var h = state.frameEl && state.frameEl.querySelector('.frame-diagram'); if (h) h.classList.toggle('shadow', els.shadow.checked); });
     window.addEventListener('resize', function () { if (state.mode === 'svg' && state.frameEl) { sizeFrame(); positionDiagram(); } });
 
