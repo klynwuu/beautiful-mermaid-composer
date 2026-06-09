@@ -396,7 +396,7 @@ function parseStyleProps(propsStr: string): Record<string, string> {
  *
  * Optional label: -->|label text|
  */
-const ARROW_REGEX = /^(<)?(-->|-.->|==>|---|-\.-|===)(?:\|([^|]*)\|)?/
+const ARROW_REGEX = /^(<)?(-->|-.->|==>|---|-\.-|===)\s*(?:\|([^|]*)\|)?/
 
 /**
  * Text-embedded label regex — matches "-- label -->", "-. label .->", "== label ==>" syntax.
@@ -578,15 +578,18 @@ function consumeNode(
     }
   }
 
-  // Bare node reference — only register if node doesn't exist yet.
-  // If it already exists, do NOT track it in the current subgraph;
-  // nodes belong to the subgraph where they're first defined.
+  // Bare node reference. Register if new. If it already exists, claim it for
+  // the current subgraph only when it has no subgraph yet — this lets users
+  // predefine nodes at the top and group them later via bare-ID listings,
+  // while keeping the "first subgraph wins" rule for edge re-references.
   if (id === null) {
     const bareMatch = text.match(BARE_NODE_REGEX)
     if (bareMatch) {
       id = bareMatch[1]!
       if (!graph.nodes.has(id)) {
         registerNode(graph, subgraphStack, { id, label: id, shape: 'rectangle' })
+      } else if (subgraphStack.length > 0 && !nodeHasSubgraph(graph, subgraphStack, id)) {
+        trackInSubgraph(subgraphStack, id)
       }
       remaining = text.slice(bareMatch[0].length)
     }
@@ -615,6 +618,24 @@ function registerNode(
     graph.nodes.set(node.id, node)
   }
   trackInSubgraph(subgraphStack, node.id)
+}
+
+/** True if the node is already a member of any subgraph — closed or still open. */
+function nodeHasSubgraph(
+  graph: MermaidGraph,
+  subgraphStack: MermaidSubgraph[],
+  nodeId: string
+): boolean {
+  for (const sg of subgraphStack) {
+    if (sg.nodeIds.includes(nodeId)) return true
+  }
+  const stack: MermaidSubgraph[] = [...graph.subgraphs]
+  while (stack.length > 0) {
+    const sg = stack.pop()!
+    if (sg.nodeIds.includes(nodeId)) return true
+    stack.push(...sg.children)
+  }
+  return false
 }
 
 /** Add node ID to the innermost subgraph if we're inside one */
