@@ -150,6 +150,13 @@ function mermaidToElk(
   // Build node-to-subgraph mapping for edge distribution
   const nodeToSubgraph = buildNodeToSubgraphMap(graph.subgraphs)
 
+  // Full ancestor chain per node (outermost→innermost subgraph ids) for LCA routing
+  const nodeToPath = buildNodePathMap(graph.subgraphs)
+
+  // Determine if we need SEPARATE hierarchy handling.
+  // We use SEPARATE when any subgraph has a direction override.
+  const hasDirectionOverride = graph.subgraphs.some(sg => sg.direction !== undefined)
+
   // Classify edges into three categories:
   // 1. Internal edges (both endpoints in same subgraph)
   // 2. Root-level edges (neither endpoint in a subgraph)
@@ -179,15 +186,20 @@ function mermaidToElk(
     } else if (!sourceSubgraph && !targetSubgraph) {
       // Root-level edge: neither endpoint in a subgraph
       edgesBySubgraph.get(null)!.push({ index: i, edge })
-    } else {
-      // Cross-hierarchy edge: need hierarchical ports
+    } else if (hasDirectionOverride) {
+      // Cross-hierarchy edge under SEPARATE handling: route via hierarchical ports
       crossHierarchyEdges.push({ index: i, edge, sourceSubgraph, targetSubgraph })
+    } else {
+      // Cross-hierarchy edge under INCLUDE_CHILDREN: declare it in the lowest
+      // common ancestor subgraph (or root). ELK requires hierarchy-crossing edges
+      // to live in the LCA of their endpoints; declaring them at the root makes
+      // ELK stop the route at the nested compound boundary, which leaves the edge
+      // disconnected from the real node ports (broken middle connectors).
+      const lca = lowestCommonSubgraph(nodeToPath, edge.source, edge.target)
+      if (!edgesBySubgraph.has(lca)) edgesBySubgraph.set(lca, [])
+      edgesBySubgraph.get(lca)!.push({ index: i, edge })
     }
   }
-
-  // Determine if we need SEPARATE hierarchy handling
-  // We use SEPARATE when any subgraph has a direction override
-  const hasDirectionOverride = graph.subgraphs.some(sg => sg.direction !== undefined)
 
   // Build the root ELK graph
   const elkGraph: ElkGraphNode = {
@@ -470,6 +482,50 @@ function buildNodeToSubgraphMap(subgraphs: MermaidSubgraph[]): Map<string, strin
   }
 
   return map
+}
+
+/**
+ * Build a mapping from node ID to its full ancestor chain of subgraph IDs,
+ * ordered outermost → innermost. Top-level nodes are absent (empty path).
+ */
+function buildNodePathMap(subgraphs: MermaidSubgraph[]): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+
+  function traverse(sg: MermaidSubgraph, path: string[]): void {
+    const here = [...path, sg.id]
+    for (const nodeId of sg.nodeIds) {
+      map.set(nodeId, here)
+    }
+    for (const child of sg.children) {
+      traverse(child, here)
+    }
+  }
+
+  for (const sg of subgraphs) {
+    traverse(sg, [])
+  }
+
+  return map
+}
+
+/**
+ * Lowest common ancestor subgraph of two endpoints, or null for the root.
+ * Walks the shared prefix of the two nodes' ancestor chains.
+ */
+function lowestCommonSubgraph(
+  nodeToPath: Map<string, string[]>,
+  source: string,
+  target: string
+): string | null {
+  const a = nodeToPath.get(source) ?? []
+  const b = nodeToPath.get(target) ?? []
+  let lca: string | null = null
+  const n = Math.min(a.length, b.length)
+  for (let i = 0; i < n; i++) {
+    if (a[i] === b[i]) lca = a[i]!
+    else break
+  }
+  return lca
 }
 
 // ============================================================================

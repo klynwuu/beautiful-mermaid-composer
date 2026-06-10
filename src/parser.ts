@@ -626,10 +626,12 @@ function nodeHasSubgraph(
   subgraphStack: MermaidSubgraph[],
   nodeId: string
 ): boolean {
-  for (const sg of subgraphStack) {
-    if (sg.nodeIds.includes(nodeId)) return true
-  }
-  const stack: MermaidSubgraph[] = [...graph.subgraphs]
+  // Roots: closed top-level subgraphs plus every subgraph still open on the stack.
+  // A stacked (open) subgraph may already contain closed nested children that live
+  // in its `.children` and haven't been pushed to graph.subgraphs yet, so we must
+  // recurse into children for both sets — otherwise a node defined in a nested
+  // subgraph and later referenced by bare ID in the parent gets double-claimed.
+  const stack: MermaidSubgraph[] = [...graph.subgraphs, ...subgraphStack]
   while (stack.length > 0) {
     const sg = stack.pop()!
     if (sg.nodeIds.includes(nodeId)) return true
