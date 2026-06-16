@@ -47,21 +47,44 @@ import { renderErSvg } from './er/renderer.ts'
 import { parseXYChart } from './xychart/parser.ts'
 import { layoutXYChart } from './xychart/layout.ts'
 import { renderXYChartSvg } from './xychart/renderer.ts'
+import { renderTimelineSvg } from './timeline/index.ts'
+import { renderQuadrantSvg } from './quadrant/index.ts'
+import { renderVennSvg } from './venn/index.ts'
+import { renderIshikawaSvg } from './ishikawa/index.ts'
+import { renderGitGraphSvg } from './gitgraph/index.ts'
+import { renderEventModelingSvg } from './eventmodeling/index.ts'
 
 /**
  * Detect the diagram type from the mermaid source text.
  * Returns the type keyword used for routing to the correct pipeline.
  */
-function detectDiagramType(text: string): 'flowchart' | 'sequence' | 'class' | 'er' | 'xychart' {
+type NativeDiagramType = 'flowchart' | 'sequence' | 'class' | 'er' | 'xychart' | 'timeline' | 'quadrant' | 'venn' | 'ishikawa' | 'gitgraph' | 'eventmodeling'
+
+/**
+ * Detect the diagram type. Returns one of the natively-rendered types, or
+ * 'fallback' for any other recognized mermaid diagram (kanban, pie, gantt,
+ * mindmap, timeline, gitGraph, …) which is rendered via the mermaid library.
+ */
+function detectDiagramType(text: string): NativeDiagramType | 'fallback' {
   const firstLine = text.trim().split(/[\n;]/)[0]?.trim().toLowerCase() ?? ''
 
   if (/^xychart(-beta)?\b/.test(firstLine)) return 'xychart'
-  if (/^sequencediagram\s*$/.test(firstLine)) return 'sequence'
-  if (/^classdiagram\s*$/.test(firstLine)) return 'class'
-  if (/^erdiagram\s*$/.test(firstLine)) return 'er'
+  if (/^sequencediagram\b/.test(firstLine)) return 'sequence'
+  if (/^classdiagram\b/.test(firstLine)) return 'class'
+  if (/^erdiagram\b/.test(firstLine)) return 'er'
+  if (/^timeline\b/.test(firstLine)) return 'timeline'
+  if (/^quadrantchart\b/.test(firstLine)) return 'quadrant'
+  if (/^venn(-beta)?\b/.test(firstLine)) return 'venn'
+  if (/^ishikawa\b/.test(firstLine)) return 'ishikawa'
+  if (/^gitgraph\b/.test(firstLine)) return 'gitgraph'
+  if (/^eventmodeling\b/.test(firstLine)) return 'eventmodeling'
 
-  // Default: flowchart/state (handled by parseMermaid internally)
-  return 'flowchart'
+  // Flowchart and state diagrams are handled natively by parseMermaid.
+  if (/^(graph|flowchart)\b/.test(firstLine)) return 'flowchart'
+  if (/^statediagram(-v2)?\b/.test(firstLine)) return 'flowchart'
+
+  // Anything else (kanban, pie, gantt, mindmap, …) goes to the mermaid fallback.
+  return 'fallback'
 }
 
 /**
@@ -184,6 +207,13 @@ export function renderMermaidSVG(
 
   const withTitle = (svg: string): string => (title ? injectTitle(svg, title) : svg)
 
+  if (diagramType === 'fallback') {
+    throw new Error(
+      'This diagram type is rendered via the mermaid fallback, which is asynchronous and ' +
+        'requires a browser DOM. Use renderMermaidSVGAsync() instead of renderMermaidSVG().',
+    )
+  }
+
   switch (diagramType) {
     case 'sequence': {
       const diagram = parseSequenceDiagram(lines)
@@ -205,6 +235,26 @@ export function renderMermaidSVG(
       const positioned = layoutXYChart(chart, options)
       return withTitle(renderXYChartSvg(positioned, colors, font, transparent, options.interactive ?? false))
     }
+    case 'timeline': {
+      return withTitle(renderTimelineSvg(lines, colors, font, transparent))
+    }
+    case 'quadrant': {
+      return withTitle(renderQuadrantSvg(lines, colors, font, transparent))
+    }
+    case 'venn': {
+      return withTitle(renderVennSvg(lines, colors, font, transparent))
+    }
+    case 'ishikawa': {
+      // Ishikawa hierarchy is indentation-based, so pass untrimmed lines.
+      const rawLines = text.split('\n').filter(l => l.trim().length > 0 && !l.trim().startsWith('%%'))
+      return withTitle(renderIshikawaSvg(rawLines, colors, font, transparent))
+    }
+    case 'gitgraph': {
+      return withTitle(renderGitGraphSvg(lines, colors, font, transparent))
+    }
+    case 'eventmodeling': {
+      return withTitle(renderEventModelingSvg(lines, colors, font, transparent))
+    }
     case 'flowchart':
     default: {
       const graph = parseMermaid(text)
@@ -217,13 +267,31 @@ export function renderMermaidSVG(
 /**
  * Render Mermaid diagram text to an SVG string — async.
  *
- * Same result as renderMermaidSVG() but returns a Promise.
- * Useful in async contexts (server handlers, data loaders, etc.)
+ * For the six natively-supported diagram types this returns the same result as
+ * renderMermaidSVG(). For any other recognized mermaid diagram (kanban, pie,
+ * gantt, mindmap, timeline, gitGraph, …) it lazily loads the mermaid library
+ * and renders it themed from the same brand colors. That fallback requires a
+ * browser DOM, so it only works in the browser (the composer editor).
  */
 export async function renderMermaidSVGAsync(
   text: string,
   options: RenderOptions = {}
 ): Promise<string> {
+  const decoded = decodeXML(text)
+  const { body } = extractFrontmatter(decoded)
+
+  if (detectDiagramType(body) === 'fallback') {
+    // mermaid reads its own front-matter (e.g. kanban config), so pass the
+    // original (decoded) source including the YAML header.
+    const { renderWithMermaid } = await import('./fallback/mermaid-render.ts')
+    return renderWithMermaid(
+      decoded,
+      buildColors(options),
+      options.font ?? 'Inter',
+      options.transparent ?? false,
+    )
+  }
+
   return renderMermaidSVG(text, options)
 }
 
