@@ -128,8 +128,22 @@ export function renderVennSvg(
   const n = model.sets.length
   const radii = model.sets.map(s => radiusForSize(s.size))
 
-  // Center layout (canonical, scaled by each set's radius for n<=2).
-  const centers = circleCenters(radii)
+  // Union-driven layout: union pairs overlap (by an amount from the union's
+  // value), non-union pairs are pushed apart.
+  const setIndex = new Map(model.sets.map((s, i) => [s.id, i]))
+  const unionPairs = new Map<string, number>()
+  const pairKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`)
+  for (const u of model.unions) {
+    const idxs = u.ids.map(id => setIndex.get(id)).filter((v): v is number => v != null)
+    const frac = Math.max(0.2, Math.min(0.85, 0.2 + (u.size ?? 4) * 0.04))
+    for (let a = 0; a < idxs.length; a++) {
+      for (let b = a + 1; b < idxs.length; b++) {
+        const i = idxs[a]!, j = idxs[b]!
+        unionPairs.set(pairKey(i, j), Math.min(radii[i]!, radii[j]!) * frac)
+      }
+    }
+  }
+  const centers = solveCenters(radii, unionPairs, pairKey)
 
   // Bounds.
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -231,27 +245,48 @@ export function renderVennSvg(
   return parts.join('\n')
 }
 
-/** Canonical centers for 1–3 sets, spaced by the involved radii. ≥4 → a row. */
-function circleCenters(radii: number[]): Array<{ x: number; y: number }> {
+/**
+ * Constraint-relaxation layout. Union pairs are pulled to a center distance
+ * that produces the desired overlap; every other pair is kept apart so that
+ * only declared unions intersect. Deterministic (fixed initial placement).
+ */
+function solveCenters(
+  radii: number[],
+  unionPairs: Map<string, number>,
+  pairKey: (a: number, b: number) => string,
+): Array<{ x: number; y: number }> {
   const n = radii.length
-  if (n <= 1) return [{ x: 0, y: 0 }]
-  if (n === 2) {
-    const d = (radii[0]! + radii[1]!) * 0.62
-    return [{ x: -d / 2, y: 0 }, { x: d / 2, y: 0 }]
+  if (n === 0) return []
+  if (n === 1) return [{ x: 0, y: 0 }]
+
+  const SEP = 16
+  const spread = radii.reduce((a, b) => a + b, 0)
+  const pos = radii.map((_, i) => {
+    const ang = (i / n) * Math.PI * 2
+    return { x: Math.cos(ang) * spread * 0.5, y: Math.sin(ang) * spread * 0.5 }
+  })
+
+  for (let it = 0; it < 400; it++) {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const dx = pos[j]!.x - pos[i]!.x
+        const dy = pos[j]!.y - pos[i]!.y
+        const dist = Math.hypot(dx, dy) || 0.01
+        const ux = dx / dist, uy = dy / dist
+        const overlap = unionPairs.get(pairKey(i, j))
+        let target: number
+        let twoSided: boolean
+        if (overlap != null) { target = radii[i]! + radii[j]! - overlap; twoSided = true }
+        else { target = radii[i]! + radii[j]! + SEP; twoSided = false }
+        const diff = dist - target
+        if (!twoSided && diff >= 0) continue // already separated
+        const move = diff * 0.25 // damped, each endpoint moves half of that
+        pos[i]!.x += ux * move; pos[i]!.y += uy * move
+        pos[j]!.x -= ux * move; pos[j]!.y -= uy * move
+      }
+    }
   }
-  if (n === 3) {
-    const avg = (radii[0]! + radii[1]! + radii[2]!) / 3
-    const d = avg * 0.72
-    return [
-      { x: 0, y: -d },
-      { x: -d * 0.87, y: d * 0.5 },
-      { x: d * 0.87, y: d * 0.5 },
-    ]
-  }
-  const out: Array<{ x: number; y: number }> = []
-  let x = 0
-  for (let i = 0; i < n; i++) { out.push({ x, y: 0 }); x += (radii[i]! + (radii[i + 1] ?? 0)) + 12 }
-  return out
+  return pos
 }
 
 function esc(s: string): string {
