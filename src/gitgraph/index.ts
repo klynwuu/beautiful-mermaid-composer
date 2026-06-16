@@ -155,16 +155,45 @@ export function renderGitGraphSvg(
   parts.push(svgOpenTag(width, height, colors, transparent))
   parts.push(buildStyleBlock(font, false))
 
-  // Connectors first (behind dots).
+  // Branch rails: a full-width line per branch at its lane. Solid between the
+  // branch's first and last commit (the commit path); dotted in the empty
+  // regions (before the first commit, after the last) out to the diagram edges.
+  const railStartEdge = seqAxis
+  const railEnd = alongMax + 30
+  const railSeg = (name: string, across: number, a0: number, a1: number, color: string, dashed: boolean) => {
+    if (a1 - a0 < 0.5) return
+    const p0 = model.orientation === 'TB' ? { x: across, y: a0 } : { x: a0, y: across }
+    const p1 = model.orientation === 'TB' ? { x: across, y: a1 } : { x: a1, y: across }
+    const dash = dashed ? ' stroke-dasharray="1 7" stroke-linecap="round"' : ' stroke-linecap="round"'
+    parts.push(
+      `<line class="git-branch-rail" data-branch="${esc(name)}" x1="${p0.x}" y1="${p0.y}" x2="${p1.x}" y2="${p1.y}" ` +
+      `stroke="${color}" stroke-width="2.5"${dash} />`,
+    )
+  }
+  for (const [name, lane] of model.laneOf) {
+    const onBranch = model.commits.filter(c => c.branch === name)
+    if (onBranch.length === 0) continue
+    const minSeq = Math.min(...onBranch.map(c => c.seq))
+    const maxSeqB = Math.max(...onBranch.map(c => c.seq))
+    const solidStart = seqAxis + minSeq * COMMIT_DX
+    const solidEnd = seqAxis + maxSeqB * COMMIT_DX
+    const across = laneAxis + lane * LANE_DY
+    const color = branchColor(lane)
+    railSeg(name, across, railStartEdge, solidStart, color, true) // dotted lead-in
+    railSeg(name, across, solidStart, solidEnd, color, false) // solid commit path
+    railSeg(name, across, solidEnd, railEnd, color, true) // dotted tail
+  }
+
+  // Cross-lane connectors only (same-lane links are covered by the rails):
+  //   branch points (parent on another lane) and merges.
   for (const c of model.commits) {
     const p = pos(c)
-    if (c.parent) {
-      const pp = pos(c.parent)
-      parts.push(connector(pp, p, branchColor(model.laneOf.get(c.branch) ?? 0), model.orientation))
+    const lane = model.laneOf.get(c.branch) ?? 0
+    if (c.parent && (model.laneOf.get(c.parent.branch) ?? 0) !== lane) {
+      parts.push(connector(pos(c.parent), p, branchColor(lane), model.orientation))
     }
     if (c.mergeParent) {
-      const mp = pos(c.mergeParent)
-      parts.push(connector(mp, p, branchColor(model.laneOf.get(c.mergeParent.branch) ?? 0), model.orientation))
+      parts.push(connector(pos(c.mergeParent), p, branchColor(model.laneOf.get(c.mergeParent.branch) ?? 0), model.orientation))
     }
   }
 
