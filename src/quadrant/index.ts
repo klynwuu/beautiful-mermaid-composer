@@ -26,6 +26,14 @@ interface Point {
   name: string
   x: number
   y: number
+  className?: string
+  style: PointStyle
+}
+interface PointStyle {
+  radius?: number
+  color?: string
+  strokeColor?: string
+  strokeWidth?: string
 }
 interface QuadrantModel {
   title?: string
@@ -38,6 +46,7 @@ interface QuadrantModel {
   q3?: string
   q4?: string
   points: Point[]
+  classDefs: Map<string, PointStyle>
 }
 
 const PAD = 24
@@ -51,12 +60,18 @@ const qFillA = `color-mix(in srgb, ${ACCENT} 8%, var(--bg))`
 const qFillB = `color-mix(in srgb, ${ACCENT} 15%, var(--bg))`
 
 function parse(lines: string[]): QuadrantModel {
-  const model: QuadrantModel = { points: [] }
+  const model: QuadrantModel = { points: [], classDefs: new Map() }
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]!
     let m: RegExpMatchArray | null
 
     if ((m = line.match(/^title\s+(.+)$/i))) { model.title = normalizeBrTags(m[1]!.trim()); continue }
+
+    // classDef <name> <prop: val, ...>
+    if ((m = line.match(/^classDef\s+(\w+)\s+(.+)$/i))) {
+      model.classDefs.set(m[1]!, parsePointStyle(m[2]!))
+      continue
+    }
 
     if ((m = line.match(/^x-axis\s+(.+)$/i))) {
       const [l, r] = splitAxis(m[1]!)
@@ -73,14 +88,36 @@ function parse(lines: string[]): QuadrantModel {
     if ((m = line.match(/^quadrant-3\s+(.+)$/i))) { model.q3 = normalizeBrTags(m[1]!.trim()); continue }
     if ((m = line.match(/^quadrant-4\s+(.+)$/i))) { model.q4 = normalizeBrTags(m[1]!.trim()); continue }
 
-    // Data point: "Name: [x, y]" (optional :::class and trailing color/radius — ignored for brand consistency)
-    if ((m = line.match(/^(.+?):\s*\[\s*([\d.]+)\s*,\s*([\d.]+)\s*\]/))) {
-      const name = normalizeBrTags(m[1]!.replace(/:::\S+/, '').trim())
-      model.points.push({ name, x: clamp01(parseFloat(m[2]!)), y: clamp01(parseFloat(m[3]!)) })
+    // Data point: "Name[:::class]: [x, y] [prop: val, ...]"
+    if ((m = line.match(/^([^:[\]]+?)\s*(?::::(\w+))?\s*:\s*\[\s*([\d.]+)\s*,\s*([\d.]+)\s*\]\s*(.*)$/))) {
+      model.points.push({
+        name: normalizeBrTags(m[1]!.trim()),
+        className: m[2] || undefined,
+        x: clamp01(parseFloat(m[3]!)),
+        y: clamp01(parseFloat(m[4]!)),
+        style: parsePointStyle(m[5] ?? ''),
+      })
       continue
     }
   }
   return model
+}
+
+/** Parse "radius: 12, color: #f00, stroke-color: #0f0, stroke-width: 5px". */
+function parsePointStyle(s: string): PointStyle {
+  const style: PointStyle = {}
+  for (const part of s.split(',')) {
+    const idx = part.indexOf(':')
+    if (idx < 0) continue
+    const key = part.slice(0, idx).trim().toLowerCase()
+    const val = part.slice(idx + 1).trim()
+    if (!val) continue
+    if (key === 'radius') style.radius = parseFloat(val)
+    else if (key === 'color') style.color = val
+    else if (key === 'stroke-color') style.strokeColor = val
+    else if (key === 'stroke-width') style.strokeWidth = val
+  }
+  return style
 }
 
 function splitAxis(s: string): [string, string | undefined] {
@@ -190,14 +227,20 @@ export function renderQuadrantSvg(
     )
   }
 
-  // Data points.
+  // Data points. Inline style overrides the point's class, which overrides the
+  // theme default — so unstyled points stay on-brand.
   for (const p of model.points) {
     const px = plotX + p.x * plotW
     const py = plotY + (1 - p.y) * plotH
+    const cls = p.className ? model.classDefs.get(p.className) : undefined
+    const radius = p.style.radius ?? cls?.radius ?? POINT_R
+    const fill = p.style.color ?? cls?.color ?? ACCENT
+    const stroke = p.style.strokeColor ?? cls?.strokeColor ?? 'var(--bg)'
+    const strokeWidth = p.style.strokeWidth ?? cls?.strokeWidth ?? '1'
     parts.push(
-      `<g class="quadrant-point">` +
-      `\n  <circle cx="${px}" cy="${py}" r="${POINT_R}" fill="${ACCENT}" stroke="var(--bg)" stroke-width="1" />` +
-      `\n  <text x="${px + POINT_R + 4}" y="${py}" dy="0.35em" text-anchor="start" ` +
+      `<g class="quadrant-point"${p.className ? ` data-class="${esc(p.className)}"` : ''}>` +
+      `\n  <circle cx="${px}" cy="${py}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />` +
+      `\n  <text x="${px}" y="${py + radius + 12}" dy="0.35em" text-anchor="middle" ` +
       `font-size="${FONT_SIZES.edgeLabel}" font-weight="${FONT_WEIGHTS.edgeLabel}" fill="var(--_text)">${esc(p.name)}</text>` +
       `\n</g>`,
     )
