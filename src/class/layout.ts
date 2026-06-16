@@ -8,7 +8,7 @@
  */
 
 import type { ElkNode, ElkExtendedEdge } from 'elkjs'
-import type { ClassDiagram, ClassNode, ClassMember, PositionedClassDiagram, PositionedClassNode, PositionedClassRelationship } from './types.ts'
+import type { ClassDiagram, ClassNode, ClassMember, PositionedClassDiagram, PositionedClassNode, PositionedClassRelationship, PositionedClassNote } from './types.ts'
 import type { RenderOptions, Point } from '../types.ts'
 import { estimateTextWidth, estimateMonoTextWidth, FONT_SIZES, FONT_WEIGHTS } from '../styles.ts'
 import { measureMultilineText } from '../text-metrics.ts'
@@ -28,7 +28,23 @@ export const CLS = {
   memberFontWeight: 400,
   nodeSpacing: 40,
   layerSpacing: 60,
+  notePadX: 10,
+  notePadY: 7,
+  noteMinWidth: 50,
 } as const
+
+/** Font used for note text (matches edge-label sizing) */
+const NOTE_FONT_SIZE = FONT_SIZES.edgeLabel
+const NOTE_FONT_WEIGHT = FONT_WEIGHTS.edgeLabel
+
+/** Compute the rendered box size of a note from its (possibly multi-line) text. */
+function noteSize(text: string): { width: number; height: number } {
+  const metrics = measureMultilineText(text, NOTE_FONT_SIZE, NOTE_FONT_WEIGHT)
+  return {
+    width: Math.max(CLS.noteMinWidth, metrics.width + CLS.notePadX * 2),
+    height: metrics.height + CLS.notePadY * 2,
+  }
+}
 
 type ClassSizeMap = Map<string, { width: number; height: number; headerHeight: number; attrHeight: number; methodHeight: number }>
 
@@ -91,6 +107,20 @@ function buildClassElkGraph(
     elkGraph.edges!.push(edge)
   }
 
+  // Notes become extra nodes; attached notes also get a connector edge so ELK
+  // reserves space for them and routes the dotted link to the class.
+  for (const note of diagram.notes) {
+    const size = noteSize(note.text)
+    elkGraph.children!.push({ id: note.id, width: size.width, height: size.height })
+    if (note.forClass) {
+      elkGraph.edges!.push({
+        id: `noteedge:${note.id}`,
+        sources: [note.id],
+        targets: [note.forClass],
+      })
+    }
+  }
+
   return { elkGraph, classSizes }
 }
 
@@ -125,25 +155,30 @@ function extractClassLayout(
     }
   }
 
-  const relationships: PositionedClassRelationship[] = []
-  for (let i = 0; i < (result.edges?.length ?? 0); i++) {
-    const elkEdge = result.edges![i]!
-    const rel = diagram.relationships[i]!
+  // Index edges by id so relationships and note connectors can be matched
+  // independently of ELK's output ordering.
+  const edgeById = new Map<string, ElkExtendedEdge>()
+  for (const e of result.edges ?? []) edgeById.set(e.id, e)
 
+  const edgePoints = (elkEdge: ElkExtendedEdge | undefined): Point[] => {
     const points: Point[] = []
-    if (elkEdge.sections && elkEdge.sections.length > 0) {
+    if (elkEdge?.sections && elkEdge.sections.length > 0) {
       const section = elkEdge.sections[0]!
       points.push({ x: section.startPoint.x, y: section.startPoint.y })
-      if (section.bendPoints) {
-        for (const bp of section.bendPoints) {
-          points.push({ x: bp.x, y: bp.y })
-        }
-      }
+      for (const bp of section.bendPoints ?? []) points.push({ x: bp.x, y: bp.y })
       points.push({ x: section.endPoint.x, y: section.endPoint.y })
     }
+    return points
+  }
+
+  const relationships: PositionedClassRelationship[] = []
+  for (let i = 0; i < diagram.relationships.length; i++) {
+    const rel = diagram.relationships[i]!
+    const elkEdge = edgeById.get(`e${i}`)
+    const points = edgePoints(elkEdge)
 
     let labelPosition: Point | undefined
-    if (elkEdge.labels && elkEdge.labels.length > 0) {
+    if (elkEdge?.labels && elkEdge.labels.length > 0) {
       const label = elkEdge.labels[0]!
       if (label.x != null && label.y != null) {
         labelPosition = {
@@ -166,11 +201,32 @@ function extractClassLayout(
     })
   }
 
+  // Notes: position from their layout nodes; attach connector points if present.
+  const childById = new Map<string, ElkNode>()
+  for (const child of result.children ?? []) childById.set(child.id, child)
+
+  const notes: PositionedClassNote[] = []
+  for (const note of diagram.notes) {
+    const child = childById.get(note.id)
+    if (!child) continue
+    const connectorPoints = note.forClass ? edgePoints(edgeById.get(`noteedge:${note.id}`)) : undefined
+    notes.push({
+      id: note.id,
+      text: note.text,
+      x: child.x ?? 0,
+      y: child.y ?? 0,
+      width: child.width ?? 0,
+      height: child.height ?? 0,
+      connectorPoints: connectorPoints && connectorPoints.length >= 2 ? connectorPoints : undefined,
+    })
+  }
+
   return {
     width: result.width ?? 600,
     height: result.height ?? 400,
     classes: positionedClasses,
     relationships,
+    notes,
   }
 }
 
@@ -181,8 +237,8 @@ export function layoutClassDiagramSync(
   diagram: ClassDiagram,
   options: RenderOptions = {}
 ): PositionedClassDiagram {
-  if (diagram.classes.length === 0) {
-    return { width: 0, height: 0, classes: [], relationships: [] }
+  if (diagram.classes.length === 0 && diagram.notes.length === 0) {
+    return { width: 0, height: 0, classes: [], relationships: [], notes: [] }
   }
 
   const { elkGraph, classSizes } = buildClassElkGraph(diagram, options)

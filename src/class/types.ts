@@ -13,6 +13,18 @@ export interface ClassDiagram {
   relationships: ClassRelationship[]
   /** Optional namespace groupings */
   namespaces: ClassNamespace[]
+  /** Notes (diagram-level or attached to a class via `note for X`) */
+  notes: ClassNote[]
+}
+
+/** A note box — either floating (`note "text"`) or attached (`note for Class "text"`) */
+export interface ClassNote {
+  /** Synthetic id used to track the note through layout */
+  id: string
+  /** Note text (may contain newlines from <br>) */
+  text: string
+  /** When set, the note is attached to this class with a dotted connector */
+  forClass?: string
 }
 
 export interface ClassNode {
@@ -85,6 +97,18 @@ export interface PositionedClassDiagram {
   height: number
   classes: PositionedClassNode[]
   relationships: PositionedClassRelationship[]
+  notes: PositionedClassNote[]
+}
+
+export interface PositionedClassNote {
+  id: string
+  text: string
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Dotted connector path from the note to its class (attached notes only) */
+  connectorPoints?: Array<{ x: number; y: number }>
 }
 
 export interface PositionedClassNode {
