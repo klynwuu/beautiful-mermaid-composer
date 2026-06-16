@@ -67,8 +67,12 @@ export function renderSequenceSvg(
     parts.push(renderNote(note))
   }
 
-  // 6. Actor boxes at top (rendered last so they're on top)
+  // 6. Actor boxes at top and the mirrored boxes at the bottom
+  //    (rendered last so they sit on top of the lifelines)
   for (const actor of diagram.actors) {
+    parts.push(renderActor(actor))
+  }
+  for (const actor of diagram.bottomActors) {
     parts.push(renderActor(actor))
   }
 

@@ -70,6 +70,8 @@ export interface PositionedSequenceDiagram {
   width: number
   height: number
   actors: PositionedActor[]
+  /** Mirrored actor boxes at the bottom of the diagram (Mermaid's default mirrorActors) */
+  bottomActors: PositionedActor[]
   lifelines: Lifeline[]
   messages: PositionedMessage[]
   activations: Activation[]
