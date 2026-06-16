@@ -1,4 +1,4 @@
-import type { ClassDiagram, ClassNode, ClassRelationship, ClassMember, RelationshipType, ClassNamespace } from './types.ts'
+import type { ClassDiagram, ClassNode, ClassRelationship, ClassMember, RelationshipType, ClassNamespace, ClassNote } from './types.ts'
 import { normalizeBrTags } from '../multiline-utils.ts'
 
 // ============================================================================
@@ -29,6 +29,7 @@ export function parseClassDiagram(lines: string[]): ClassDiagram {
     classes: [],
     relationships: [],
     namespaces: [],
+    notes: [],
   }
 
   // Track classes by ID for deduplication
@@ -82,6 +83,29 @@ export function parseClassDiagram(lines: string[]): ClassDiagram {
     if (line === '}' && currentNamespace) {
       diagram.namespaces.push(currentNamespace)
       currentNamespace = null
+      continue
+    }
+
+    // --- Note attached to a class: `note for ClassName "text"` ---
+    const noteForMatch = line.match(/^note\s+for\s+(\S+)\s+"([\s\S]*)"\s*$/)
+    if (noteForMatch) {
+      const forClass = noteForMatch[1]!
+      ensureClass(classMap, forClass)
+      diagram.notes.push({
+        id: `__note${diagram.notes.length}`,
+        text: normalizeBrTags(noteForMatch[2]!),
+        forClass,
+      })
+      continue
+    }
+
+    // --- Floating note: `note "text"` ---
+    const noteMatch = line.match(/^note\s+"([\s\S]*)"\s*$/)
+    if (noteMatch) {
+      diagram.notes.push({
+        id: `__note${diagram.notes.length}`,
+        text: normalizeBrTags(noteMatch[1]!),
+      })
       continue
     }
 

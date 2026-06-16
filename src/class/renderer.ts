@@ -1,9 +1,11 @@
-import type { PositionedClassDiagram, PositionedClassNode, PositionedClassRelationship, ClassMember, RelationshipType } from './types.ts'
+import type { PositionedClassDiagram, PositionedClassNode, PositionedClassRelationship, PositionedClassNote, ClassMember, RelationshipType } from './types.ts'
 import type { DiagramColors } from '../theme.ts'
+import type { ConnectorStyle } from '../types.ts'
 import { svgOpenTag, buildStyleBlock } from '../theme.ts'
 import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, estimateTextWidth, TEXT_BASELINE_SHIFT } from '../styles.ts'
 import { CLS } from './layout.ts'
 import { renderMultilineText, escapeXml as escapeXmlUtil } from '../multiline-utils.ts'
+import { pointsToPolylinePath, pointsToCurvedPath } from '../edge-path.ts'
 
 // ============================================================================
 // Class diagram SVG renderer
@@ -36,7 +38,8 @@ export function renderClassSvg(
   diagram: PositionedClassDiagram,
   colors: DiagramColors,
   font: string = 'Inter',
-  transparent: boolean = false
+  transparent: boolean = false,
+  edgeStyle: ConnectorStyle = 'sharp'
 ): string {
   const parts: string[] = []
 
@@ -47,9 +50,12 @@ export function renderClassSvg(
   parts.push(relationshipMarkerDefs())
   parts.push('</defs>')
 
-  // 1. Relationship lines (rendered behind boxes)
+  // 1. Relationship lines + note connectors (rendered behind boxes)
   for (const rel of diagram.relationships) {
-    parts.push(renderRelationship(rel))
+    parts.push(renderRelationship(rel, edgeStyle))
+  }
+  for (const note of diagram.notes) {
+    parts.push(renderNoteConnector(note, edgeStyle))
   }
 
   // 2. Class boxes
@@ -57,7 +63,12 @@ export function renderClassSvg(
     parts.push(renderClassBox(cls))
   }
 
-  // 3. Relationship labels and cardinality
+  // 3. Note boxes (on top of their connectors)
+  for (const note of diagram.notes) {
+    parts.push(renderClassNote(note))
+  }
+
+  // 4. Relationship labels and cardinality
   for (const rel of diagram.relationships) {
     parts.push(renderRelationshipLabels(rel))
   }
@@ -80,25 +91,28 @@ export function renderClassSvg(
  *   - dependency: open arrow (simple >)
  *   - realization: hollow triangle (same as inheritance)
  *
- * Uses var(--_arrow) for fill/stroke and var(--bg) for hollow marker fills.
+ * Markers use var(--_line) so the UML endpoint shape matches the exact color of
+ * the relationship line it caps (var(--bg) fills the hollow shapes). This keeps
+ * each connector a single consistent color across all themes, rather than the
+ * line and its marker rendering as two slightly different tints.
  */
 function relationshipMarkerDefs(): string {
   return (
     // Hollow triangle (inheritance, realization) — points at target
     `  <marker id="cls-inherit" markerWidth="12" markerHeight="10" refX="12" refY="5" orient="auto-start-reverse">` +
-    `\n    <polygon points="0 0, 12 5, 0 10" fill="var(--bg)" stroke="var(--_arrow)" stroke-width="1.5" />` +
+    `\n    <polygon points="0 0, 12 5, 0 10" fill="var(--bg)" stroke="var(--_line)" stroke-width="1.5" stroke-linejoin="round" />` +
     `\n  </marker>` +
     // Filled diamond (composition) — points at source
     `\n  <marker id="cls-composition" markerWidth="12" markerHeight="10" refX="0" refY="5" orient="auto-start-reverse">` +
-    `\n    <polygon points="6 0, 12 5, 6 10, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="1" />` +
+    `\n    <polygon points="6 0, 12 5, 6 10, 0 5" fill="var(--_line)" stroke="var(--_line)" stroke-width="1" stroke-linejoin="round" />` +
     `\n  </marker>` +
     // Hollow diamond (aggregation) — points at source
     `\n  <marker id="cls-aggregation" markerWidth="12" markerHeight="10" refX="0" refY="5" orient="auto-start-reverse">` +
-    `\n    <polygon points="6 0, 12 5, 6 10, 0 5" fill="var(--bg)" stroke="var(--_arrow)" stroke-width="1.5" />` +
+    `\n    <polygon points="6 0, 12 5, 6 10, 0 5" fill="var(--bg)" stroke="var(--_line)" stroke-width="1.5" stroke-linejoin="round" />` +
     `\n  </marker>` +
     // Open arrow (association, dependency)
     `\n  <marker id="cls-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto-start-reverse">` +
-    `\n    <polyline points="0 0, 8 3, 0 6" fill="none" stroke="var(--_arrow)" stroke-width="1.5" />` +
+    `\n    <polyline points="0 0, 8 3, 0 6" fill="none" stroke="var(--_line)" stroke-width="1.5" stroke-linejoin="round" />` +
     `\n  </marker>`
   )
 }
@@ -231,6 +245,43 @@ function renderMember(member: ClassMember, x: number, y: number): string {
 }
 
 // ============================================================================
+// Note rendering
+// ============================================================================
+
+/** Note box fill/stroke/text — fixed soft-yellow (matches Mermaid's note styling). */
+const NOTE_FILL = '#fff5ad'
+const NOTE_STROKE = '#aaaa33'
+const NOTE_TEXT = '#333333'
+
+/**
+ * Render a note box (floating or attached). Wrapped in <g class="class-note">.
+ */
+function renderClassNote(note: PositionedClassNote): string {
+  const { x, y, width, height, text } = note
+  return (
+    `<g class="class-note">` +
+    `\n  <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="2" ry="2" ` +
+    `fill="${NOTE_FILL}" stroke="${NOTE_STROKE}" stroke-width="${STROKE_WIDTHS.innerBox}" />` +
+    `\n  ${renderMultilineText(text, x + width / 2, y + height / 2, FONT_SIZES.edgeLabel,
+      `font-size="${FONT_SIZES.edgeLabel}" text-anchor="middle" font-weight="${FONT_WEIGHTS.edgeLabel}" fill="${NOTE_TEXT}"`)}` +
+    `\n</g>`
+  )
+}
+
+/** Render the dotted connector from an attached note to its class. */
+function renderNoteConnector(note: PositionedClassNote, edgeStyle: ConnectorStyle): string {
+  const pts = note.connectorPoints
+  if (!pts || pts.length < 2) return ''
+  const geom = edgeStyle === 'curved' && pts.length > 2
+    ? `<path class="class-note-link" d="${pointsToCurvedPath(pts)}"`
+    : `<polyline class="class-note-link" points="${pointsToPolylinePath(pts)}"`
+  return (
+    `${geom} fill="none" ` +
+    `stroke="var(--_line)" stroke-width="${STROKE_WIDTHS.connector}" stroke-dasharray="2 3" />`
+  )
+}
+
+// ============================================================================
 // Relationship rendering
 // ============================================================================
 
@@ -238,10 +289,9 @@ function renderMember(member: ClassMember, x: number, y: number): string {
  * Render a relationship line with appropriate markers and semantic attributes.
  * Includes data-* attributes for programmatic inspection.
  */
-function renderRelationship(rel: PositionedClassRelationship): string {
+function renderRelationship(rel: PositionedClassRelationship, edgeStyle: ConnectorStyle): string {
   if (rel.points.length < 2) return ''
 
-  const pathData = rel.points.map(p => `${p.x},${p.y}`).join(' ')
   const isDashed = rel.type === 'dependency' || rel.type === 'realization'
   const dashArray = isDashed ? ' stroke-dasharray="6 4"' : ''
 
@@ -272,8 +322,12 @@ function renderRelationship(rel: PositionedClassRelationship): string {
     dataAttrs.push(`data-to-cardinality="${escapeAttr(rel.toCardinality)}"`)
   }
 
+  const geom = edgeStyle === 'curved' && rel.points.length > 2
+    ? `<path ${dataAttrs.join(' ')} d="${pointsToCurvedPath(rel.points)}"`
+    : `<polyline ${dataAttrs.join(' ')} points="${pointsToPolylinePath(rel.points)}"`
+
   return (
-    `<polyline ${dataAttrs.join(' ')} points="${pathData}" fill="none" stroke="var(--_line)" ` +
+    `${geom} fill="none" stroke="var(--_line)" ` +
     `stroke-width="${STROKE_WIDTHS.connector}"${dashArray}${markers} />`
   )
 }

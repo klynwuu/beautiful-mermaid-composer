@@ -27,6 +27,7 @@ export { renderMermaidASCII, renderMermaidAscii } from './ascii/index.ts'
 export type { AsciiRenderOptions } from './ascii/index.ts'
 
 import { decodeXML } from 'entities'
+import { escapeXml } from './multiline-utils.ts'
 import { parseMermaid } from './parser.ts'
 import { layoutGraphSync } from './layout.ts'
 import { renderSvg } from './renderer.ts'
@@ -61,6 +62,60 @@ function detectDiagramType(text: string): 'flowchart' | 'sequence' | 'class' | '
 
   // Default: flowchart/state (handled by parseMermaid internally)
   return 'flowchart'
+}
+
+/**
+ * Strip a leading YAML front-matter block (Mermaid's `--- ... ---` header) and
+ * pull out the `title:` if present. Returns the remaining diagram body.
+ *
+ * Mermaid uses the front-matter block for diagram title and config; we honor
+ * the title and ignore the rest rather than failing to parse.
+ */
+function extractFrontmatter(text: string): { title?: string; body: string } {
+  const fm = text.match(/^﻿?[ \t]*\r?\n*---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/)
+  if (!fm) return { body: text }
+
+  const yaml = fm[1] ?? ''
+  const body = text.slice(fm[0].length)
+
+  const titleMatch = yaml.match(/^[ \t]*title:[ \t]*(.+?)[ \t]*$/m)
+  let title = titleMatch?.[1]?.trim()
+  if (title) title = title.replace(/^["']|["']$/g, '').trim()
+
+  return { title: title || undefined, body }
+}
+
+/** Title band height and font size for the front-matter title. */
+const TITLE_BAND = 40
+const TITLE_FONT_SIZE = 16
+
+/**
+ * Wrap a finished diagram SVG with a centered title above it. The original
+ * content is shifted down by a fixed band; the SVG height/viewBox grow to fit.
+ * The title inherits the theme text color via the existing CSS variables.
+ */
+function injectTitle(svg: string, title: string): string {
+  const dim = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)
+  if (!dim) return svg
+
+  const w = parseFloat(dim[1]!)
+  const h = parseFloat(dim[2]!)
+  const newH = h + TITLE_BAND
+
+  const openEnd = svg.indexOf('>') + 1
+  const head = svg
+    .slice(0, openEnd)
+    .replace(/viewBox="0 0 [\d.]+ [\d.]+"/, `viewBox="0 0 ${w} ${newH}"`)
+    .replace(/width="[\d.]+" height="[\d.]+"/, `width="${w}" height="${newH}"`)
+
+  const closeIdx = svg.lastIndexOf('</svg>')
+  const inner = svg.slice(openEnd, closeIdx)
+
+  const titleEl =
+    `<text x="${w / 2}" y="${TITLE_BAND * 0.62}" text-anchor="middle" ` +
+    `font-size="${TITLE_FONT_SIZE}" font-weight="600" fill="var(--_text)">${escapeXml(title)}</text>`
+
+  return `${head}\n${titleEl}\n<g transform="translate(0,${TITLE_BAND})">${inner}</g>\n</svg>`
 }
 
 /**
@@ -116,6 +171,10 @@ export function renderMermaidSVG(
   // Without this, escapeXml() double-encodes them: &lt; → &amp;lt; → literal "&lt;" in SVG.
   text = decodeXML(text)
 
+  // Strip the optional YAML front-matter header (title/config) before parsing.
+  const { title, body } = extractFrontmatter(text)
+  text = body
+
   const colors = buildColors(options)
   const font = options.font ?? 'Inter'
   const transparent = options.transparent ?? false
@@ -123,32 +182,34 @@ export function renderMermaidSVG(
 
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
 
+  const withTitle = (svg: string): string => (title ? injectTitle(svg, title) : svg)
+
   switch (diagramType) {
     case 'sequence': {
       const diagram = parseSequenceDiagram(lines)
       const positioned = layoutSequenceDiagram(diagram, options)
-      return renderSequenceSvg(positioned, colors, font, transparent)
+      return withTitle(renderSequenceSvg(positioned, colors, font, transparent))
     }
     case 'class': {
       const diagram = parseClassDiagram(lines)
       const positioned = layoutClassDiagramSync(diagram, options)
-      return renderClassSvg(positioned, colors, font, transparent)
+      return withTitle(renderClassSvg(positioned, colors, font, transparent, options.edgeStyle ?? 'sharp'))
     }
     case 'er': {
       const diagram = parseErDiagram(lines)
       const positioned = layoutErDiagramSync(diagram, options)
-      return renderErSvg(positioned, colors, font, transparent)
+      return withTitle(renderErSvg(positioned, colors, font, transparent))
     }
     case 'xychart': {
       const chart = parseXYChart(lines)
       const positioned = layoutXYChart(chart, options)
-      return renderXYChartSvg(positioned, colors, font, transparent, options.interactive ?? false)
+      return withTitle(renderXYChartSvg(positioned, colors, font, transparent, options.interactive ?? false))
     }
     case 'flowchart':
     default: {
       const graph = parseMermaid(text)
       const positioned = layoutGraphSync(graph, options)
-      return renderSvg(positioned, colors, font, transparent, options.edgeStyle ?? 'sharp')
+      return withTitle(renderSvg(positioned, colors, font, transparent, options.edgeStyle ?? 'sharp'))
     }
   }
 }
