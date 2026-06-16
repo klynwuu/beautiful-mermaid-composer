@@ -50,6 +50,7 @@ const SECTION_H = 34
 const PERIOD_H = 30
 const GAP = 10
 const COL_GAP = 14
+const AXIS_GAP = 26 // vertical space between the period row / axis / events
 const CARD_PAD_X = 12
 const CARD_PAD_Y = 8
 const MIN_COL_W = 110
@@ -132,10 +133,15 @@ export function renderTimelineSvg(
   const periodBoxes: Box[] = []
   const eventBoxes: Box[] = []
 
+  // Per-column connector anchors: { cx, eventsBottom }.
+  const columns: Array<{ cx: number; eventsBottom: number }> = []
+
+  const hasSections = model.sections.some(s => s.name)
   const titleH = model.title ? TITLE_H : 0
   const topY = PAD + titleH
-  const periodY = topY + SECTION_H + GAP
-  const eventsY = periodY + PERIOD_H + GAP
+  const periodY = topY + (hasSections ? SECTION_H + GAP : 0)
+  const axisY = periodY + PERIOD_H + AXIS_GAP
+  const eventsY = axisY + AXIS_GAP
 
   // Card height for a (possibly multi-line) event text.
   const cardHeight = (text: string): number =>
@@ -177,6 +183,8 @@ export function renderTimelineSvg(
         eventBoxes.push({ text: ev, x: colX, y: ey, width: w, height: h, color: si })
         ey += h + GAP
       }
+      const eventsBottom = period.events.length > 0 ? ey - GAP : eventsY
+      columns.push({ cx: colX + w / 2, eventsBottom })
       maxBottom = Math.max(maxBottom, ey)
       colX += w + COL_GAP
     })
@@ -184,13 +192,21 @@ export function renderTimelineSvg(
     cursorX = sectionX + sectionW + COL_GAP * 2
   })
 
+  const connectorBottom = columns.reduce((m, c) => Math.max(m, c.eventsBottom), eventsY) + 16
   const width = Math.max(cursorX - COL_GAP * 2 + PAD, 200)
-  const height = maxBottom + PAD
+  const height = Math.max(maxBottom, connectorBottom) + PAD
 
   // ---- Render ----
   const parts: string[] = []
   parts.push(svgOpenTag(width, height, colors, transparent))
   parts.push(buildStyleBlock(font, false))
+  parts.push('<defs>')
+  parts.push(
+    `  <marker id="timeline-arrow" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto-start-reverse">` +
+    `\n    <polygon points="0 0, 9 4, 0 8" fill="var(--_line)" />` +
+    `\n  </marker>`,
+  )
+  parts.push('</defs>')
 
   if (model.title) {
     parts.push(
@@ -198,6 +214,23 @@ export function renderTimelineSvg(
         `text-anchor="middle" font-size="${FONT_SIZES.nodeLabel + 3}" font-weight="700" fill="var(--_text)"`),
     )
   }
+
+  // Time axis + dashed connectors (behind the boxes/cards drawn afterwards).
+  //   period box --(dashed)--> axis --(dashed, arrow)--> events
+  for (const col of columns) {
+    parts.push(
+      `<line x1="${col.cx}" y1="${periodY + PERIOD_H}" x2="${col.cx}" y2="${axisY}" ` +
+      `stroke="var(--_line)" stroke-width="${STROKE_WIDTHS.innerBox}" stroke-dasharray="3 3" />`,
+    )
+    parts.push(
+      `<line x1="${col.cx}" y1="${axisY}" x2="${col.cx}" y2="${col.eventsBottom + 14}" ` +
+      `stroke="var(--_line)" stroke-width="${STROKE_WIDTHS.innerBox}" stroke-dasharray="3 3" marker-end="url(#timeline-arrow)" />`,
+    )
+  }
+  parts.push(
+    `<line class="timeline-axis" x1="${PAD}" y1="${axisY}" x2="${width - PAD}" y2="${axisY}" ` +
+    `stroke="var(--_line)" stroke-width="2" marker-end="url(#timeline-arrow)" />`,
+  )
 
   // Section bands.
   for (const b of sectionBoxes) {
