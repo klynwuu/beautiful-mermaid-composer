@@ -6,58 +6,70 @@ import { renderMultilineText, normalizeBrTags } from '../multiline-utils.ts'
 // ============================================================================
 // Ishikawa / fishbone diagram (native)
 //
-// Mermaid `ishikawa` syntax: the first content line is the effect (problem);
-// indentation expresses cause hierarchy:
+// Mermaid `ishikawa` / `ishikawa-beta` syntax: the first content line is the
+// effect (problem); indentation expresses an arbitrarily deep cause hierarchy:
 //   ishikawa
-//     Late delivery
-//       Machines
-//         Old equipment
-//       Methods
-//         No QA process
+//     Blurry Photo
+//       Equipment
+//         LENS
+//           Dirty lens
+//         SENSOR
+//           Dirty sensor
+//       Process
+//         Out of focus
 //
 // Rendered as a horizontal spine pointing into the effect box on the right,
-// with category "bones" branching diagonally above/below the spine and their
-// sub-causes listed at each bone tip. All strokes/fills are theme variables.
+// category "bones" branching diagonally above/below the spine, and each
+// category's sub-tree hung off its bone as horizontal sub-branches (sub-bone
+// header + its causes). All strokes/fills are theme variables.
 // ============================================================================
 
-interface CauseNode {
+interface Node {
   text: string
-  children: CauseNode[]
+  children: Node[]
 }
 
-const PAD = 24
-const SLOT_GAP = 96
-const BONE_LEN = 140
+const PAD = 26
 const COS = 0.5 // cos 60°
 const SIN = 0.866 // sin 60°
+const ROW_H = 20 // vertical room per rendered cause row
+const SUB_LEN = 30 // horizontal sub-branch length off the main bone
+const BONE_MARGIN = 26 // extra bone beyond the category's rows
+const SLOT_GAP = 36
 const ACCENT = 'var(--accent, var(--_line))'
 
-// Parse using leading-whitespace indentation. Expects RAW (untrimmed) lines
-// with the `ishikawa` header already removed.
-function parseWithIndent(raw: string[]): { effect: string; categories: CauseNode[] } {
+/** Build an arbitrarily-deep tree from leading-whitespace indentation. */
+function parseTree(raw: string[]): { effect: string; categories: Node[] } {
   const items = raw
     .filter(l => l.trim().length > 0)
     .map(l => ({ indent: l.match(/^\s*/)![0].length, text: normalizeBrTags(l.trim()) }))
-
   if (items.length === 0) return { effect: '', categories: [] }
-  const effect = items[0]!.text
-  const rest = items.slice(1)
-  if (rest.length === 0) return { effect, categories: [] }
 
-  // The shallowest indent among the rest is the category level.
-  const catIndent = Math.min(...rest.map(i => i.indent))
-  const categories: CauseNode[] = []
-  let current: CauseNode | null = null
-  for (const it of rest) {
-    if (it.indent <= catIndent) {
-      current = { text: it.text, children: [] }
-      categories.push(current)
-    } else if (current) {
-      current.children.push({ text: it.text, children: [] })
-    }
+  const effect = items[0]!.text
+  const categories: Node[] = []
+  const stack: Array<{ indent: number; node: Node }> = []
+  for (const it of items.slice(1)) {
+    const node: Node = { text: it.text, children: [] }
+    while (stack.length && stack[stack.length - 1]!.indent >= it.indent) stack.pop()
+    if (stack.length === 0) categories.push(node)
+    else stack[stack.length - 1]!.node.children.push(node)
+    stack.push({ indent: it.indent, node })
   }
   return { effect, categories }
 }
+
+/** Depth-first list of a node's descendants (excludes the node itself). */
+function descendants(node: Node): Node[] {
+  const out: Node[] = []
+  for (const c of node.children) {
+    out.push(c)
+    out.push(...descendants(c))
+  }
+  return out
+}
+
+/** Rendered row count for a category child: 1 (its header/label) + its descendants. */
+const childRows = (child: Node) => 1 + descendants(child).length
 
 export function renderIshikawaSvg(
   rawLines: string[],
@@ -65,34 +77,51 @@ export function renderIshikawaSvg(
   font: string = 'Inter',
   transparent: boolean = false,
 ): string {
-  // Use raw (untrimmed) lines so indentation-based hierarchy survives.
-  const { effect, categories } = parseWithIndent(rawLines.slice(1))
+  const { effect, categories } = parseTree(rawLines.slice(1))
 
   const fontS = FONT_SIZES.edgeLabel
   const catFont = FONT_SIZES.nodeLabel
 
-  // Effect box sizing.
+  // Per-category geometry.
+  const cats = categories.map(cat => {
+    const rows = cat.children.reduce((a, c) => a + childRows(c), 0) || 1
+    const bandH = rows * ROW_H
+    const boneLen = (bandH + BONE_MARGIN) / SIN
+    const run = boneLen * COS
+    // Width the category occupies left of its spine attachment.
+    let labelW = 0
+    for (const child of cat.children) {
+      labelW = Math.max(labelW, estimateTextWidth(child.text, fontS + 1, 600))
+      for (const d of descendants(child)) labelW = Math.max(labelW, estimateTextWidth(d.text, fontS, 400))
+    }
+    return { cat, rows, bandH, boneLen, run, labelW }
+  })
+
+  // Lay categories left→right, alternating top/bottom.
   const effW = Math.max(120, estimateTextWidth(effect, catFont, 700) + 32)
-  const effH = 54
+  const effH = 56
 
-  // Slot layout along the spine — categories alternate top/bottom.
-  const nSlots = categories.length
-  const spineStartX = PAD + 10
-  const spineUsable = (nSlots + 1) * SLOT_GAP
-  const spineEndX = spineStartX + spineUsable
-  const effectX = spineEndX + 10
+  // Each category reaches left from its spine attachment by run + sub-branch +
+  // label width; place attach points so that reach never clips the left edge.
+  let x = PAD
+  const placed = cats.map((c, i) => {
+    const reach = c.run + SUB_LEN + c.labelW
+    const attachX = x + reach
+    x = attachX + SLOT_GAP
+    return { ...c, attachX, top: i % 2 === 0 }
+  })
 
-  // Vertical extent: bone reach + room for category label and sub-causes.
-  const subMax = categories.reduce((m, c) => Math.max(m, c.children.length), 0)
-  const reach = BONE_LEN * SIN + 24 + (subMax + 1) * (fontS + 5) + 14
-  const spineY = reach + PAD
+  const spineEndX = (placed.length ? placed[placed.length - 1]!.attachX : PAD) + 40
+  const effectX = spineEndX + 8
+
+  const maxBand = placed.reduce((m, p) => Math.max(m, p.bandH + BONE_MARGIN), 60)
+  const spineY = PAD + maxBand
   const width = effectX + effW + PAD
-  const height = spineY + reach + PAD
+  const height = spineY + maxBand + PAD
 
   const parts: string[] = []
   parts.push(svgOpenTag(width, height, colors, transparent))
   parts.push(buildStyleBlock(font, false))
-
   parts.push('<defs>')
   parts.push(
     `  <marker id="ishikawa-head" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto-start-reverse">` +
@@ -101,9 +130,9 @@ export function renderIshikawaSvg(
   )
   parts.push('</defs>')
 
-  // Spine (points right, into the effect box).
+  // Spine (points right into the effect box).
   parts.push(
-    `<line x1="${spineStartX}" y1="${spineY}" x2="${effectX}" y2="${spineY}" ` +
+    `<line x1="${PAD}" y1="${spineY}" x2="${effectX}" y2="${spineY}" ` +
     `stroke="var(--_line)" stroke-width="2" marker-end="url(#ishikawa-head)" />`,
   )
 
@@ -117,45 +146,67 @@ export function renderIshikawaSvg(
     `\n</g>`,
   )
 
-  // Category bones (alternating top/bottom).
-  categories.forEach((cat, i) => {
-    const top = i % 2 === 0
-    const attachX = spineStartX + (i + 1) * SLOT_GAP
-    const dir = top ? -1 : 1
-    const tipX = attachX - BONE_LEN * COS
-    const tipY = spineY + dir * BONE_LEN * SIN
+  for (const p of placed) {
+    const dir = p.top ? -1 : 1
+    const attach = { x: p.attachX, y: spineY }
+    const tip = { x: p.attachX - p.run, y: spineY + dir * p.boneLen * SIN }
 
-    // Bone line.
+    // Main category bone.
     parts.push(
-      `<line class="ishikawa-bone" x1="${attachX}" y1="${spineY}" x2="${tipX}" y2="${tipY}" ` +
-      `stroke="var(--_line)" stroke-width="${STROKE_WIDTHS.connector}" />`,
+      `<line class="ishikawa-bone" x1="${attach.x}" y1="${attach.y}" x2="${tip.x}" y2="${tip.y}" ` +
+      `stroke="var(--_line)" stroke-width="2" />`,
     )
 
     // Category label box at the tip.
-    const labelW = Math.max(70, estimateTextWidth(cat.text, fontS + 1, 600) + 18)
-    const labelH = 24
-    const lx = tipX - labelW / 2
-    const ly = top ? tipY - labelH : tipY
+    const clW = Math.max(74, estimateTextWidth(p.cat.text, catFont, 700) + 18)
+    const clH = 26
+    const cly = p.top ? tip.y - clH : tip.y
     parts.push(
       `<g class="ishikawa-category">` +
-      `\n  <rect x="${lx}" y="${ly}" width="${labelW}" height="${labelH}" rx="5" ry="5" ` +
+      `\n  <rect x="${tip.x - clW / 2}" y="${cly}" width="${clW}" height="${clH}" rx="5" ry="5" ` +
       `fill="color-mix(in srgb, ${ACCENT} 18%, var(--bg))" stroke="var(--_node-stroke)" stroke-width="${STROKE_WIDTHS.innerBox}" />` +
-      `\n  ${renderMultilineText(cat.text, tipX, ly + labelH / 2, fontS + 1,
-        `text-anchor="middle" font-size="${fontS + 1}" font-weight="600" fill="var(--_text)"`)}` +
+      `\n  ${renderMultilineText(p.cat.text, tip.x, cly + clH / 2, catFont,
+        `text-anchor="middle" font-size="${catFont}" font-weight="700" fill="var(--_text)"`)}` +
       `\n</g>`,
     )
 
-    // Sub-causes listed beyond the tip (away from the spine).
-    let sy = top ? ly - 4 - fontS : ly + labelH + 4 + fontS
-    const step = top ? -(fontS + 5) : fontS + 5
-    for (const child of cat.children) {
+    // Children hung along the bone, each in a vertical band sized to its rows.
+    const totalRows = p.rows
+    let rowCursor = 0
+    for (const child of p.cat.children) {
+      const rows = childRows(child)
+      // Fraction along the bone for this child's band centre (0 near spine → 1 near tip).
+      const f = totalRows > 0 ? (rowCursor + rows / 2) / totalRows : 0.5
+      const frac = 0.16 + f * 0.78
+      const bx = attach.x + (tip.x - attach.x) * frac
+      const by = attach.y + (tip.y - attach.y) * frac
+      rowCursor += rows
+
+      // Horizontal sub-branch off the bone (pointing left, away from the spine).
+      const qx = bx - SUB_LEN
       parts.push(
-        `<text x="${tipX}" y="${sy}" dy="0.35em" text-anchor="middle" ` +
-        `font-size="${fontS}" font-weight="${FONT_WEIGHTS.edgeLabel}" fill="var(--_text-muted)">${esc(child.text)}</text>`,
+        `<line x1="${bx}" y1="${by}" x2="${qx}" y2="${by}" stroke="var(--_line)" stroke-width="${STROKE_WIDTHS.connector}" />`,
       )
-      sy += step
+
+      // Sub-tree text block: header (sub-cause/category) + its descendants, stacked.
+      const descs = descendants(child)
+      const blockRows = 1 + descs.length
+      let ty = by - ((blockRows - 1) / 2) * ROW_H
+      const labelRight = qx - 6
+      parts.push(
+        `<text x="${labelRight}" y="${ty}" dy="0.35em" text-anchor="end" ` +
+        `font-size="${fontS + 1}" font-weight="${descs.length ? 700 : FONT_WEIGHTS.edgeLabel}" ` +
+        `fill="${descs.length ? 'var(--_text)' : 'var(--_text-muted)'}">${esc(child.text)}</text>`,
+      )
+      for (const d of descs) {
+        ty += ROW_H
+        parts.push(
+          `<text x="${labelRight - 10}" y="${ty}" dy="0.35em" text-anchor="end" ` +
+          `font-size="${fontS}" font-weight="${FONT_WEIGHTS.edgeLabel}" fill="var(--_text-muted)">${esc(d.text)}</text>`,
+        )
+      }
     }
-  })
+  }
 
   parts.push('</svg>')
   return parts.join('\n')
