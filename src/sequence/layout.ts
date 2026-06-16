@@ -57,7 +57,7 @@ export function layoutSequenceDiagram(
   _options: RenderOptions = {}
 ): PositionedSequenceDiagram {
   if (diagram.actors.length === 0) {
-    return { width: 0, height: 0, actors: [], lifelines: [], messages: [], activations: [], blocks: [], notes: [] }
+    return { width: 0, height: 0, actors: [], bottomActors: [], lifelines: [], messages: [], activations: [], blocks: [], notes: [] }
   }
 
   // 1. Calculate actor widths and assign horizontal positions (center X)
@@ -344,8 +344,6 @@ export function layoutSequenceDiagram(
   // can extend beyond the actor-based viewport. Compute the true bounding box
   // across all positioned elements, then shift everything right if anything
   // extends left of the desired padding margin and expand the width to fit.
-  const diagramBottom = messageY + SEQ.padding
-
   // Find global X extents across actors, blocks, notes, and message labels
   let globalMinX: number = SEQ.padding // actors already start at SEQ.padding
   let globalMaxX = 0
@@ -385,22 +383,45 @@ export function layoutSequenceDiagram(
     for (let i = 0; i < actorCenterX.length; i++) actorCenterX[i]! += shiftX
   }
 
-  // 7. Calculate final lifelines (after shift so X positions are correct)
+  // 7. Mirror actor boxes at the bottom (Mermaid renders participants at both
+  //    top and bottom by default). Place them below the lowest content so the
+  //    lifelines run from the top box down to the matching bottom box.
+  let contentBottom = actorY + SEQ.actorHeight
+  for (const m of messages) {
+    contentBottom = Math.max(contentBottom, m.isSelf ? m.y + SEQ.selfMessageHeight : m.y)
+  }
+  for (const n of notes) contentBottom = Math.max(contentBottom, n.y + n.height)
+  for (const b of blocks) contentBottom = Math.max(contentBottom, b.y + b.height)
+
+  const bottomActorY = contentBottom + SEQ.headerGap
+  const bottomActors: PositionedActor[] = diagram.actors.map((a, i) => ({
+    id: a.id,
+    label: a.label,
+    type: a.type,
+    x: actorCenterX[i]!,
+    y: bottomActorY,
+    width: actorWidths[i]!,
+    height: SEQ.actorHeight,
+  }))
+
+  // 8. Calculate final lifelines (after shift so X positions are correct).
+  //    Lifelines stop at the top edge of the mirrored bottom actor box.
   const lifelines: Lifeline[] = diagram.actors.map((a, i) => ({
     actorId: a.id,
     x: actorCenterX[i]!,
     topY: actorY + SEQ.actorHeight,
-    bottomY: diagramBottom - SEQ.padding,
+    bottomY: bottomActorY,
   }))
 
-  // 8. Calculate diagram dimensions from the bounding box
+  // 9. Calculate diagram dimensions from the bounding box
   const diagramWidth = globalMaxX + shiftX + SEQ.padding
-  const diagramHeight = diagramBottom
+  const diagramHeight = bottomActorY + SEQ.actorHeight + SEQ.padding
 
   return {
     width: Math.max(diagramWidth, 200),
     height: Math.max(diagramHeight, 100),
     actors,
+    bottomActors,
     lifelines,
     messages,
     activations,
