@@ -56,15 +56,12 @@ export const BASE_FINISH_CSS = `
   stroke-width: 1px;
 }
 
-/* ── Class / ER member rows → monospace (matches custom renderer) ──────── */
-.classGroup .title,
-.classTitle {
-  font-weight: 600;
-}
-.classGroup text.classText,
-.entityLabel,
-.attributeBoxOdd text,
-.attributeBoxEven text {
+/* ── ER attribute rows → monospace (matches custom renderer). Class-diagram
+   member text carries no class in mermaid 11, so it can't be targeted without
+   restyling every label; we leave it in the theme font. ──────────────────── */
+.er .entityLabel { font-weight: 600; }
+.er .attributeBoxOdd text,
+.er .attributeBoxEven text {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace;
 }
 `

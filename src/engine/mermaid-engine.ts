@@ -66,6 +66,21 @@ function buildThemeVariables(colors: DiagramColors, font: string, transparent: b
     noteBkgColor: '#fff5ad',
     noteTextColor: '#333333',
     noteBorderColor: '#aaaa33',
+    // XY chart: bars/lines have no CSS class, so theme them here. Drive the
+    // plot palette from the brand accent (+ line/muted shades for extra series).
+    xyChart: {
+      backgroundColor: 'transparent',
+      titleColor: colors.fg,
+      xAxisLabelColor: colors.fg,
+      xAxisTitleColor: colors.fg,
+      xAxisTickColor: line,
+      xAxisLineColor: line,
+      yAxisLabelColor: colors.fg,
+      yAxisTitleColor: colors.fg,
+      yAxisTickColor: line,
+      yAxisLineColor: line,
+      plotColorPalette: [colors.accent ?? line, line, colors.muted ?? colors.fg].join(', '),
+    },
   }
 }
 

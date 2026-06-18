@@ -67,6 +67,13 @@ type NativeDiagramType = 'flowchart' | 'sequence' | 'class' | 'er' | 'xychart' |
  */
 const MERMAID_ENGINE_TYPES = new Set<NativeDiagramType>([
   'flowchart',
+  'sequence',
+  'class',
+  'er',
+  'xychart',
+  'timeline',
+  'quadrant',
+  'gitgraph',
 ])
 
 /**
