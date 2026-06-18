@@ -61,6 +61,15 @@ import { renderEventModelingSvg } from './eventmodeling/index.ts'
 type NativeDiagramType = 'flowchart' | 'sequence' | 'class' | 'er' | 'xychart' | 'timeline' | 'quadrant' | 'venn' | 'ishikawa' | 'gitgraph' | 'eventmodeling'
 
 /**
+ * Diagram types we render through the official-mermaid engine. During the
+ * phased migration this set grows; the custom renderers below are kept only for
+ * types mermaid can't produce (venn / ishikawa / eventmodeling).
+ */
+const MERMAID_ENGINE_TYPES = new Set<NativeDiagramType>([
+  'flowchart',
+])
+
+/**
  * Detect the diagram type. Returns one of the natively-rendered types, or
  * 'fallback' for any other recognized mermaid diagram (kanban, pie, gantt,
  * mindmap, timeline, gitGraph, …) which is rendered via the mermaid library.
@@ -279,19 +288,22 @@ export async function renderMermaidSVGAsync(
 ): Promise<string> {
   const decoded = decodeXML(text)
   const { body } = extractFrontmatter(decoded)
+  const type = detectDiagramType(body)
 
-  if (detectDiagramType(body) === 'fallback') {
-    // mermaid reads its own front-matter (e.g. kanban config), so pass the
-    // original (decoded) source including the YAML header.
-    const { renderWithMermaid } = await import('./fallback/mermaid-render.ts')
-    return renderWithMermaid(
-      decoded,
-      buildColors(options),
-      options.font ?? 'Inter',
-      options.transparent ?? false,
-    )
+  // Official-mermaid engine: types we've migrated (MERMAID_ENGINE_TYPES) plus
+  // any other recognized mermaid diagram ('fallback'). mermaid reads its own
+  // front-matter (title/config), so pass the original decoded source.
+  if (type === 'fallback' || MERMAID_ENGINE_TYPES.has(type)) {
+    const { renderThemedMermaid } = await import('./engine/mermaid-engine.ts')
+    return renderThemedMermaid(decoded, buildColors(options), {
+      font: options.font,
+      transparent: options.transparent,
+      edgeStyle: options.edgeStyle,
+      themeCss: options.themeCss,
+    })
   }
 
+  // Custom-only types (venn / ishikawa / eventmodeling) — synchronous engine.
   return renderMermaidSVG(text, options)
 }
 

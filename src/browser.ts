@@ -10,7 +10,7 @@
 import { renderMermaidSVGAsync } from './index.ts'
 import { renderMermaidASCII, diagramColorsToAsciiTheme } from './ascii/index.ts'
 import { THEMES } from './theme.ts'
-import { BRANDS, brandColors } from './brands.ts'
+import { BRANDS, brandColors, themeCss } from './themes/index.ts'
 import { getSeriesColor, CHART_ACCENT_FALLBACK } from './xychart/colors.ts'
 
 declare const window: unknown
@@ -22,6 +22,7 @@ declare const window: unknown
   THEMES,
   BRANDS,
   brandColors,
+  themeCss,
   getSeriesColor,
   CHART_ACCENT_FALLBACK,
 }
