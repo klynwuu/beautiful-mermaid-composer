@@ -42,10 +42,10 @@ import { clipEdgeToShape } from './shape-clipping.ts'
 const DEFAULTS = {
   font: 'Inter',
   padding: 40,
-  nodeSpacing: 28,
-  layerSpacing: 48,
+  nodeSpacing: 40,
+  layerSpacing: 64,
   mergeEdges: true,
-  thoroughness: 3,
+  thoroughness: 7,
 } as const
 
 /** Convert Mermaid direction to ELK direction */
@@ -209,9 +209,11 @@ function mermaidToElk(
       'elk.direction': directionToElk(graph.direction),
       'elk.spacing.nodeNode': String(opts.nodeSpacing),
       'elk.layered.spacing.nodeNodeBetweenLayers': String(opts.layerSpacing),
-      'elk.spacing.edgeEdge': '12',
-      'elk.layered.spacing.edgeEdgeBetweenLayers': '12',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '12',
+      'elk.spacing.edgeEdge': '16',
+      'elk.layered.spacing.edgeEdgeBetweenLayers': '16',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '18',
+      'elk.spacing.edgeNode': '18',
+      'elk.spacing.componentComponent': '48',
       'elk.padding': `[top=${opts.padding},left=${opts.padding},bottom=${opts.padding},right=${opts.padding}]`,
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
@@ -361,17 +363,18 @@ function subgraphToElk(
     'elk.padding': '[top=44,left=16,bottom=16,right=16]', // Top = headerHeight(28) + gap(16) to match bottom padding
     'elk.edgeRouting': 'ORTHOGONAL',
     'elk.contentAlignment': 'H_CENTER V_CENTER',
-    'elk.spacing.edgeEdge': '12',
-    'elk.layered.spacing.edgeEdgeBetweenLayers': '12',
-    'elk.layered.spacing.edgeNodeBetweenLayers': '12',
+    'elk.spacing.edgeEdge': '16',
+    'elk.layered.spacing.edgeEdgeBetweenLayers': '16',
+    'elk.layered.spacing.edgeNodeBetweenLayers': '18',
+    'elk.spacing.edgeNode': '18',
     'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
     'elk.layered.spacing.nodeNodeBetweenLayers': String(opts.layerSpacing),
     'elk.spacing.nodeNode': String(opts.nodeSpacing),
-  }
-
-  // Apply direction override if specified
-  if (sg.direction) {
-    layoutOptions['elk.direction'] = directionToElk(sg.direction)
+    // Inherit the root flow direction so an un-overridden subgraph isn't laid
+    // out with ELK's default (RIGHT). Only INTAKE-style `direction LR` blocks
+    // diverge. Without this, every subgraph rendered horizontally in SEPARATE
+    // hierarchy mode (triggered whenever any subgraph sets a direction).
+    'elk.direction': directionToElk(sg.direction ?? graph.direction),
   }
 
   const elkNode: ElkGraphNode = {
