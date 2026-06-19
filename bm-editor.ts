@@ -201,6 +201,7 @@ const html = `<!DOCTYPE html>
     <div class="ctrl">
       <button class="btn" id="dl-svg">SVG</button>
       <button class="btn" id="copy-svg">Copy SVG</button>
+      <button class="btn" id="copy-png">Copy PNG</button>
       <button class="btn primary" id="dl-png">Download PNG</button>
     </div>
   </div>
@@ -543,8 +544,11 @@ ${bundleJs}
       ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
     }
 
-    function exportPNG() {
-      var c = colors(); if (!c || !state.svgTransparent) return;
+    // Rasterize the current diagram + frame settings to a PNG Blob. Shared by
+    // Download PNG and Copy PNG. Resolves to { blob, cw, ch }.
+    function buildPNGBlob() {
+      var c = colors();
+      if (!c || !state.svgTransparent) return Promise.reject(new Error('nothing to render'));
       var dims = RATIOS[els.ratio.value];
       var sw = state.svgEl ? (state.svgEl.width.baseVal.value || 1200) : 1200;
       var sh = state.svgEl ? (state.svgEl.height.baseVal.value || 800) : 800;
@@ -555,14 +559,11 @@ ${bundleJs}
       var canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
       var ctx = canvas.getContext('2d');
 
-      var bgStep = Promise.resolve();
       if (els.transparent.checked) { /* leave alpha */ }
       else if (state.bgImg) { drawCover(ctx, state.bgImg, cw, ch); }
       else { ctx.fillStyle = c.bg; ctx.fillRect(0, 0, cw, ch); }
 
-      bgStep.then(function () {
-        return loadImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(state.svgTransparent));
-      }).then(function (img) {
+      return loadImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(state.svgTransparent)).then(function (img) {
         var dw, dh, dx, dy;
         if (dims && state.geom) {
           // Honor the user's drag/resize placement (normalized → canvas px).
@@ -584,11 +585,27 @@ ${bundleJs}
         }
         ctx.drawImage(img, dx, dy, dw, dh);
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-        canvas.toBlob(function (b) {
-          var tag = els.ratio.value.replace(':', 'x') + (els.transparent.checked ? '-transparent' : '');
-          download('bm-' + tag + '.png', b); toast('Downloaded ' + cw + '×' + ch);
-        }, 'image/png');
+        return new Promise(function (res, rej) {
+          canvas.toBlob(function (b) { b ? res({ blob: b, cw: cw, ch: ch }) : rej(new Error('toBlob failed')); }, 'image/png');
+        });
+      });
+    }
+
+    function exportPNG() {
+      buildPNGBlob().then(function (r) {
+        var tag = els.ratio.value.replace(':', 'x') + (els.transparent.checked ? '-transparent' : '');
+        download('bm-' + tag + '.png', r.blob); toast('Downloaded ' + r.cw + '×' + r.ch);
       }).catch(function () { toast('PNG export failed'); });
+    }
+
+    function copyPNG() {
+      if (!(navigator.clipboard && window.ClipboardItem)) { toast('Copy PNG not supported'); return; }
+      // Safari requires the ClipboardItem to receive a Promise<Blob> and
+      // clipboard.write() to be invoked synchronously within the click gesture.
+      try {
+        var item = new ClipboardItem({ 'image/png': buildPNGBlob().then(function (r) { return r.blob; }) });
+        navigator.clipboard.write([item]).then(function () { toast('Copied PNG'); }, function () { toast('Copy failed'); });
+      } catch (e) { toast('Copy PNG not supported'); }
     }
 
     function downloadSVG() {
@@ -663,6 +680,7 @@ ${bundleJs}
     });
 
     el('dl-png').addEventListener('click', exportPNG);
+    el('copy-png').addEventListener('click', copyPNG);
     el('dl-svg').addEventListener('click', downloadSVG);
     el('copy-svg').addEventListener('click', copySVG);
     el('copy-ascii').addEventListener('click', copyASCII);
