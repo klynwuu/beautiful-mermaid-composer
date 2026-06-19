@@ -124,8 +124,9 @@ const html = `<!DOCTYPE html>
   .pane-head { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
   textarea { flex: 1; resize: none; border: 0; outline: none; padding: 16px; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--ink); background: #fffef9; tab-size: 2; }
 
-  .preview { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 28px; background: var(--paper); transition: background .15s; }
-  .frame { position: relative; box-shadow: 0 10px 40px -12px rgba(9,23,23,.35); border: 1px solid rgba(9,23,23,.08); background-size: cover; background-position: center; }
+  .preview { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 28px; background: var(--paper); transition: background .15s; cursor: grab; }
+  .preview.panning { cursor: grabbing; }
+  .frame { position: relative; box-shadow: 0 10px 40px -12px rgba(9,23,23,.35); border: 1px solid rgba(9,23,23,.08); background-size: cover; background-position: center; transform-origin: 0 0; }
   .frame.plain { box-shadow: none; border-color: transparent; }
   .frame.checker { background-color: #fff; background-image: linear-gradient(45deg,#e6e6e6 25%,transparent 25%),linear-gradient(-45deg,#e6e6e6 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e6e6e6 75%),linear-gradient(-45deg,transparent 75%,#e6e6e6 75%); background-size: 22px 22px; background-position: 0 0,0 11px,11px -11px,-11px 0; }
   /* Frosted backdrop for "glass" themes: a duplicate of the frame's background
@@ -257,7 +258,10 @@ ${bundleJs}
       bgUrl: null, bgImg: null,
       // Diagram placement over the frame, normalized to frame size so it maps
       // 1:1 to any export resolution. cx/cy = center fraction, w = width fraction.
-      geom: null, svgAspect: 0.66
+      geom: null, svgAspect: 0.66,
+      // Preview viewport transform (visual only — never affects export). scale +
+      // translate applied to the frame for scroll-to-zoom and drag-to-pan.
+      view: { scale: 1, x: 0, y: 0 }
     };
     var seq = 0;
 
@@ -350,6 +354,31 @@ ${bundleJs}
       updateFrost();
     }
 
+    // ── Preview viewport: scroll-to-zoom + drag-to-pan (visual only) ──────
+    var ZOOM_MIN = 0.2, ZOOM_MAX = 8;
+    function applyView() {
+      if (!state.frameEl) return;
+      var v = state.view;
+      state.frameEl.style.transform = 'translate(' + v.x + 'px,' + v.y + 'px) scale(' + v.scale + ')';
+    }
+    function resetView() {
+      state.view.scale = 1; state.view.x = 0; state.view.y = 0; applyView();
+    }
+    // Zoom toward a client-space point so the content under the cursor stays put.
+    function zoomAt(clientX, clientY, factor) {
+      if (!state.frameEl) return;
+      var v = state.view;
+      var ns = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.scale * factor));
+      if (ns === v.scale) return;
+      var rect = state.frameEl.getBoundingClientRect();
+      var ox = clientX - rect.left, oy = clientY - rect.top; // offset within scaled frame
+      var k = ns / v.scale;
+      v.x -= ox * (k - 1);
+      v.y -= oy * (k - 1);
+      v.scale = ns;
+      applyView();
+    }
+
     // Free placement is enabled for fixed ratios (room around the diagram).
     // "Fit diagram" auto-centers and contains (no manipulation needed).
     function interactive() { return els.ratio.value !== 'fit'; }
@@ -433,7 +462,10 @@ ${bundleJs}
       var startCx = state.geom.cxN * fw, startCy = state.geom.cyN * fh;
       var sx = e.clientX, sy = e.clientY;
       function move(ev) {
-        var snapped = applySnap(startCx + (ev.clientX - sx), startCy + (ev.clientY - sy), w, h, fw, fh);
+        // Pointer deltas are in screen px; the frame may be zoomed, so map back
+        // to frame-layout px by dividing out the view scale.
+        var z = state.view.scale || 1;
+        var snapped = applySnap(startCx + (ev.clientX - sx) / z, startCy + (ev.clientY - sy) / z, w, h, fw, fh);
         state.geom.cxN = snapped.cx / fw; state.geom.cyN = snapped.cy / fh;
         applyGeom(hold, frame);
       }
@@ -452,7 +484,8 @@ ${bundleJs}
       var a = state.svgAspect, MINW = 40;
       function move(ev) {
         var frect = frame.getBoundingClientRect();
-        var localX = ev.clientX - frect.left;
+        // frect is the scaled rect; convert to frame-layout px via the view scale.
+        var localX = (ev.clientX - frect.left) / (state.view.scale || 1);
         var w = Math.abs(localX - anchorX); if (w < MINW) w = MINW;
         var h = w * a;
         var left = west ? anchorX - w : anchorX;
@@ -522,6 +555,7 @@ ${bundleJs}
         hold.addEventListener('pointerdown', function (e) { startDrag(e, hold); });
         hold.addEventListener('dblclick', function () { if (interactive()) { state.geom = defaultGeom(frame.clientWidth, frame.clientHeight); applyGeom(hold, frame); } });
         paintFrameBg(frame); sizeFrame(); positionDiagram(); buildFrost(frame);
+        applyView(); // re-apply any persisted zoom/pan to the new frame
         els.status.textContent = '';
       }).catch(function (e) {
         if (my !== seq) return;
@@ -646,10 +680,42 @@ ${bundleJs}
     els.theme.addEventListener('change', function () { var f = brandFont(); if (f) els.font.value = f; render(); });
     els.font.addEventListener('change', render);
     els.curved.addEventListener('change', render);
-    els.ratio.addEventListener('change', function () { state.geom = null; if (state.frameEl) { sizeFrame(); updateChrome(); positionDiagram(); } });
+    els.ratio.addEventListener('change', function () { state.geom = null; resetView(); if (state.frameEl) { sizeFrame(); updateChrome(); positionDiagram(); } });
     els.transparent.addEventListener('change', function () { if (state.frameEl) { paintFrameBg(state.frameEl); buildFrost(state.frameEl); } });
     els.shadow.addEventListener('change', function () { var h = state.frameEl && state.frameEl.querySelector('.frame-diagram'); if (h) h.classList.toggle('shadow', els.shadow.checked); });
     window.addEventListener('resize', function () { if (state.mode === 'svg' && state.frameEl) { sizeFrame(); positionDiagram(); } });
+
+    // ── Preview zoom (scroll) + pan (drag on background) + reset (dblclick) ──
+    // Scroll-to-zoom toward the cursor; trackpad pinch arrives as ctrl+wheel.
+    els.preview.addEventListener('wheel', function (e) {
+      if (state.mode !== 'svg' || !state.frameEl) return;
+      e.preventDefault();
+      // Normalize delta across wheel/line/page modes; pinch (ctrlKey) zooms faster.
+      var unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? els.preview.clientHeight : 1);
+      var dy = e.deltaY * unit * (e.ctrlKey ? 2.5 : 1);
+      zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.0015));
+    }, { passive: false });
+
+    // Drag empty preview space to pan. Don't hijack the diagram placement
+    // drag (fixed-ratio mode) or the resize handles.
+    els.preview.addEventListener('pointerdown', function (e) {
+      if (state.mode !== 'svg' || !state.frameEl || e.button !== 0) return;
+      var t = e.target;
+      if (t.closest && (t.closest('.handle') || (interactive() && t.closest('.frame-diagram')))) return;
+      e.preventDefault();
+      els.preview.classList.add('panning');
+      var sx = e.clientX, sy = e.clientY, ox = state.view.x, oy = state.view.y;
+      function move(ev) { state.view.x = ox + (ev.clientX - sx); state.view.y = oy + (ev.clientY - sy); applyView(); }
+      function up() { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); els.preview.classList.remove('panning'); }
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+    });
+
+    // Double-click empty space resets the view (the diagram itself keeps its
+    // own dblclick → reset-placement behavior in fixed-ratio mode).
+    els.preview.addEventListener('dblclick', function (e) {
+      if (e.target.closest && interactive() && e.target.closest('.frame-diagram')) return;
+      resetView();
+    });
 
     // Arrow-key nudge — only when the diagram object is selected (focused),
     // so typing in the code editor / using selects is never hijacked.
