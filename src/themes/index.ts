@@ -13,11 +13,16 @@ import type { DiagramColors } from '../theme.ts'
 
 export type { BrandTheme, ThemeDefinition } from './types.ts'
 
-/** Full theme definitions (includes engine-only `css`). */
-export const THEME_DEFINITIONS: ThemeDefinition[] = THEME_DEFS
+// Dropdown order: explicit `order` first (ascending), then alphabetical by label.
+const ordered = THEME_DEFS.slice().sort(
+  (a, b) => (a.order ?? 100) - (b.order ?? 100) || a.label.localeCompare(b.label),
+)
 
-/** Frontend-facing brand registry — ThemeDefinition minus the `css` field. */
-export const BRANDS: BrandTheme[] = THEME_DEFS.map(({ css, ...brand }) => brand)
+/** Full theme definitions (includes engine-only `css`), in dropdown order. */
+export const THEME_DEFINITIONS: ThemeDefinition[] = ordered
+
+/** Frontend-facing brand registry — ThemeDefinition minus engine-only fields. */
+export const BRANDS: BrandTheme[] = ordered.map(({ css, order, ...brand }) => brand)
 
 /** Look up a brand + variant. Returns its DiagramColors, or null. */
 export function brandColors(id: string, variant: 'light' | 'dark'): DiagramColors | null {

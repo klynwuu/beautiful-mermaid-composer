@@ -28,6 +28,11 @@ export interface ThemeDefinition {
   /** Recommended Google font for diagrams in this identity. */
   font: string
   /**
+   * Sort weight in the dropdown (lower = earlier). Themes without an order sort
+   * after ordered ones, alphabetically by label. Keeps hero brands on top.
+   */
+  order?: number
+  /**
    * "Glass" identity: translucent surfaces meant to overlay a background image.
    * The editor renders a real per-node frosted backdrop blur for these.
    */

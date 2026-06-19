@@ -8,6 +8,7 @@ const transparentPerplexity: ThemeDefinition = {
   id: 'transparent-perplexity',
   label: 'Transparent Perplexity',
   font: 'Space Grotesk',
+  order: 1,
   glass: true,
   light: THEMES['transparent-perplexity']!,
   dark: THEMES['transparent-perplexity-dark']!,

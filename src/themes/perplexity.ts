@@ -8,6 +8,7 @@ const perplexity: ThemeDefinition = {
   id: 'perplexity',
   label: 'Perplexity',
   font: 'Space Grotesk',
+  order: 0,
   light: THEMES['perplexity']!,
   dark: THEMES['perplexity-dark']!,
 }
