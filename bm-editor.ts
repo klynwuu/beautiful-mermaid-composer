@@ -17,7 +17,13 @@
  *   bun run bm-editor.ts --serve  # also serves on :4568
  */
 
-import { BRANDS } from './src/brands.ts'
+import { generateThemeRegistry } from './src/themes/generate.ts'
+
+// ── Discover theme files (drop a file in src/themes/ → it appears here) ─────
+// Regenerate the static registry from src/themes/*.ts BEFORE importing it, so a
+// newly added theme file is picked up with no other edits.
+await generateThemeRegistry()
+const { BRANDS } = await import('./src/themes/index.ts')
 
 // ── Build the browser bundle (exposes window.__mermaid) ────────────────────
 
@@ -263,6 +269,10 @@ ${bundleJs}
       var b = (M.BRANDS || []).find(function (x) { return x.id === id; });
       return b ? b.font : null;
     }
+    // Per-theme mermaid themeCSS override for the active brand ('' if none).
+    function themeCss() {
+      return (M.themeCss ? M.themeCss(els.theme.value.split('::')[0]) : '') || '';
+    }
     // True for "glass" themes (translucent surfaces meant to overlay an image).
     function isGlass() {
       var id = els.theme.value.split('::')[0];
@@ -493,7 +503,7 @@ ${bundleJs}
       }
 
       var my = ++seq;
-      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp', transparent: true });
+      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp', transparent: true, themeCss: themeCss() });
       els.status.textContent = 'rendering…';
       M.renderMermaidSVGAsync(els.code.value, opts).then(function (svg) {
         if (my !== seq) return;
@@ -584,7 +594,7 @@ ${bundleJs}
     function downloadSVG() {
       // Re-render an opaque, themed SVG (clean vector — no frame / bg image).
       var c = colors(); if (!c) return;
-      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp' });
+      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp', themeCss: themeCss() });
       M.renderMermaidSVGAsync(els.code.value, opts).then(function (svg) {
         download('bm-diagram.svg', new Blob([svg], { type: 'image/svg+xml' })); toast('Downloaded SVG');
       });

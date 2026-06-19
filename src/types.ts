@@ -167,6 +167,11 @@ export interface RenderOptions {
    * - 'curved' — smooth spline through the routed bend points
    */
   edgeStyle?: ConnectorStyle
+  /**
+   * Per-theme mermaid `themeCSS` override (mermaid-rendered types only),
+   * appended to the shared BASE_FINISH_CSS. Supplied by the active theme file.
+   */
+  themeCss?: string
 }
 
 /** Connector corner style for flowchart edges. */

@@ -28,30 +28,14 @@ export type { AsciiRenderOptions } from './ascii/index.ts'
 
 import { decodeXML } from 'entities'
 import { escapeXml } from './multiline-utils.ts'
-import { parseMermaid } from './parser.ts'
-import { layoutGraphSync } from './layout.ts'
-import { renderSvg } from './renderer.ts'
 import type { RenderOptions } from './types.ts'
 import type { DiagramColors } from './theme.ts'
 import { DEFAULTS } from './theme.ts'
 
-import { parseSequenceDiagram } from './sequence/parser.ts'
-import { layoutSequenceDiagram } from './sequence/layout.ts'
-import { renderSequenceSvg } from './sequence/renderer.ts'
-import { parseClassDiagram } from './class/parser.ts'
-import { layoutClassDiagramSync } from './class/layout.ts'
-import { renderClassSvg } from './class/renderer.ts'
-import { parseErDiagram } from './er/parser.ts'
-import { layoutErDiagramSync } from './er/layout.ts'
-import { renderErSvg } from './er/renderer.ts'
-import { parseXYChart } from './xychart/parser.ts'
-import { layoutXYChart } from './xychart/layout.ts'
-import { renderXYChartSvg } from './xychart/renderer.ts'
-import { renderTimelineSvg } from './timeline/index.ts'
-import { renderQuadrantSvg } from './quadrant/index.ts'
+// Custom renderers, retained only for the diagram types official mermaid can't
+// produce. Every mermaid-supported type goes through src/engine instead.
 import { renderVennSvg } from './venn/index.ts'
 import { renderIshikawaSvg } from './ishikawa/index.ts'
-import { renderGitGraphSvg } from './gitgraph/index.ts'
 import { renderEventModelingSvg } from './eventmodeling/index.ts'
 
 /**
@@ -59,6 +43,22 @@ import { renderEventModelingSvg } from './eventmodeling/index.ts'
  * Returns the type keyword used for routing to the correct pipeline.
  */
 type NativeDiagramType = 'flowchart' | 'sequence' | 'class' | 'er' | 'xychart' | 'timeline' | 'quadrant' | 'venn' | 'ishikawa' | 'gitgraph' | 'eventmodeling'
+
+/**
+ * Diagram types we render through the official-mermaid engine. During the
+ * phased migration this set grows; the custom renderers below are kept only for
+ * types mermaid can't produce (venn / ishikawa / eventmodeling).
+ */
+const MERMAID_ENGINE_TYPES = new Set<NativeDiagramType>([
+  'flowchart',
+  'sequence',
+  'class',
+  'er',
+  'xychart',
+  'timeline',
+  'quadrant',
+  'gitgraph',
+])
 
 /**
  * Detect the diagram type. Returns one of the natively-rendered types, or
@@ -207,40 +207,17 @@ export function renderMermaidSVG(
 
   const withTitle = (svg: string): string => (title ? injectTitle(svg, title) : svg)
 
-  if (diagramType === 'fallback') {
+  // Every mermaid-supported type (and the 'fallback' catch-all) renders through
+  // the official-mermaid engine, which is async + DOM-dependent.
+  if (diagramType === 'fallback' || MERMAID_ENGINE_TYPES.has(diagramType)) {
     throw new Error(
-      'This diagram type is rendered via the mermaid fallback, which is asynchronous and ' +
-        'requires a browser DOM. Use renderMermaidSVGAsync() instead of renderMermaidSVG().',
+      'This diagram type is rendered via the official-mermaid engine, which is asynchronous ' +
+        'and requires a browser DOM. Use renderMermaidSVGAsync() instead of renderMermaidSVG().',
     )
   }
 
+  // Custom-only types — synchronous, no DOM. These have no mermaid equivalent.
   switch (diagramType) {
-    case 'sequence': {
-      const diagram = parseSequenceDiagram(lines)
-      const positioned = layoutSequenceDiagram(diagram, options)
-      return withTitle(renderSequenceSvg(positioned, colors, font, transparent))
-    }
-    case 'class': {
-      const diagram = parseClassDiagram(lines)
-      const positioned = layoutClassDiagramSync(diagram, options)
-      return withTitle(renderClassSvg(positioned, colors, font, transparent, options.edgeStyle ?? 'sharp'))
-    }
-    case 'er': {
-      const diagram = parseErDiagram(lines)
-      const positioned = layoutErDiagramSync(diagram, options)
-      return withTitle(renderErSvg(positioned, colors, font, transparent))
-    }
-    case 'xychart': {
-      const chart = parseXYChart(lines)
-      const positioned = layoutXYChart(chart, options)
-      return withTitle(renderXYChartSvg(positioned, colors, font, transparent, options.interactive ?? false))
-    }
-    case 'timeline': {
-      return withTitle(renderTimelineSvg(lines, colors, font, transparent))
-    }
-    case 'quadrant': {
-      return withTitle(renderQuadrantSvg(lines, colors, font, transparent))
-    }
     case 'venn': {
       return withTitle(renderVennSvg(lines, colors, font, transparent))
     }
@@ -249,19 +226,12 @@ export function renderMermaidSVG(
       const rawLines = text.split('\n').filter(l => l.trim().length > 0 && !l.trim().startsWith('%%'))
       return withTitle(renderIshikawaSvg(rawLines, colors, font, transparent))
     }
-    case 'gitgraph': {
-      return withTitle(renderGitGraphSvg(lines, colors, font, transparent))
-    }
     case 'eventmodeling': {
       return withTitle(renderEventModelingSvg(lines, colors, font, transparent))
     }
-    case 'flowchart':
-    default: {
-      const graph = parseMermaid(text)
-      const positioned = layoutGraphSync(graph, options)
-      return withTitle(renderSvg(positioned, colors, font, transparent, options.edgeStyle ?? 'sharp'))
-    }
   }
+
+  throw new Error(`Unsupported diagram type for synchronous rendering: ${diagramType}`)
 }
 
 /**
@@ -279,19 +249,22 @@ export async function renderMermaidSVGAsync(
 ): Promise<string> {
   const decoded = decodeXML(text)
   const { body } = extractFrontmatter(decoded)
+  const type = detectDiagramType(body)
 
-  if (detectDiagramType(body) === 'fallback') {
-    // mermaid reads its own front-matter (e.g. kanban config), so pass the
-    // original (decoded) source including the YAML header.
-    const { renderWithMermaid } = await import('./fallback/mermaid-render.ts')
-    return renderWithMermaid(
-      decoded,
-      buildColors(options),
-      options.font ?? 'Inter',
-      options.transparent ?? false,
-    )
+  // Official-mermaid engine: types we've migrated (MERMAID_ENGINE_TYPES) plus
+  // any other recognized mermaid diagram ('fallback'). mermaid reads its own
+  // front-matter (title/config), so pass the original decoded source.
+  if (type === 'fallback' || MERMAID_ENGINE_TYPES.has(type)) {
+    const { renderThemedMermaid } = await import('./engine/mermaid-engine.ts')
+    return renderThemedMermaid(decoded, buildColors(options), {
+      font: options.font,
+      transparent: options.transparent,
+      edgeStyle: options.edgeStyle,
+      themeCss: options.themeCss,
+    })
   }
 
+  // Custom-only types (venn / ishikawa / eventmodeling) — synchronous engine.
   return renderMermaidSVG(text, options)
 }
 
