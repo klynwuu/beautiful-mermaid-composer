@@ -17,7 +17,7 @@
 import mermaid from 'mermaid'
 import type { DiagramColors } from '../theme.ts'
 import type { ConnectorStyle } from '../types.ts'
-import { BASE_FINISH_CSS } from './finish.ts'
+import { BASE_FINISH_CSS, CONNECTOR_ANIMATION_CSS } from './finish.ts'
 
 let renderCounter = 0
 let lastInitKey = ''
@@ -28,6 +28,8 @@ export interface ThemedMermaidOptions {
   edgeStyle?: ConnectorStyle
   /** Per-theme themeCSS override, appended to BASE_FINISH_CSS. */
   themeCss?: string
+  /** Animate connectors with a flowing-dash effect. */
+  animateEdges?: boolean
 }
 
 /** Map our brand DiagramColors onto mermaid's `base` theme variables. */
@@ -106,7 +108,8 @@ export async function renderThemedMermaid(
   const curve = opts.edgeStyle === 'curved' ? 'basis' : 'linear'
 
   const themeVariables = buildThemeVariables(colors, font, transparent)
-  const themeCSS = BASE_FINISH_CSS + (opts.themeCss ?? '')
+  const themeCSS =
+    BASE_FINISH_CSS + (opts.animateEdges ? CONNECTOR_ANIMATION_CSS : '') + (opts.themeCss ?? '')
 
   // initialize() is global; only re-run when an input actually changes.
   const initKey = JSON.stringify({ themeVariables, themeCSS, curve })

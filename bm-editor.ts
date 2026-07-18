@@ -5,7 +5,7 @@
  *   - Theme dropdown built from the brand registry (src/brands.ts) — add a
  *     brand there and it appears here automatically (light + dark per brand).
  *   - Diagram font picker (Google Fonts).
- *   - Curved vs sharp connectors.
+ *   - Curved vs sharp connectors, optional flowing-dash connector animation.
  *   - SVG / ASCII output (ASCII is copyable plain text).
  *   - Optional local background image (centered, cover) — shown live (WYSIWYG).
  *   - Export to social dimensions: Fit / 1:1 / 3:4 / 4:3 / 16:9 / 9:16 at a
@@ -170,6 +170,7 @@ const html = `<!DOCTYPE html>
       </select>
     </div>
     <label class="chk"><input type="checkbox" id="curved" checked /> Curved</label>
+    <label class="chk"><input type="checkbox" id="animate" /> Animate</label>
     <div class="seg" id="mode">
       <button data-mode="svg" class="active">SVG</button>
       <button data-mode="ascii">ASCII</button>
@@ -245,7 +246,7 @@ ${bundleJs}
 
     var el = function (id) { return document.getElementById(id); };
     var els = {
-      code: el('code'), theme: el('theme'), font: el('font'), curved: el('curved'),
+      code: el('code'), theme: el('theme'), font: el('font'), curved: el('curved'), animate: el('animate'),
       mode: el('mode'), ratio: el('ratio'), transparent: el('transparent'), shadow: el('shadow'),
       bgUpload: el('bg-upload'), bgFile: el('bg-file'), bgName: el('bg-name'), bgClear: el('bg-clear'),
       preview: el('preview'), status: el('status'), toast: el('toast'),
@@ -537,7 +538,7 @@ ${bundleJs}
       }
 
       var my = ++seq;
-      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp', transparent: true, themeCss: themeCss() });
+      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp', animateEdges: els.animate.checked, transparent: true, themeCss: themeCss() });
       els.status.textContent = 'rendering…';
       M.renderMermaidSVGAsync(els.code.value, opts).then(function (svg) {
         if (my !== seq) return;
@@ -645,7 +646,7 @@ ${bundleJs}
     function downloadSVG() {
       // Re-render an opaque, themed SVG (clean vector — no frame / bg image).
       var c = colors(); if (!c) return;
-      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp', themeCss: themeCss() });
+      var opts = Object.assign({}, c, { font: els.font.value, edgeStyle: els.curved.checked ? 'curved' : 'sharp', animateEdges: els.animate.checked, themeCss: themeCss() });
       M.renderMermaidSVGAsync(els.code.value, opts).then(function (svg) {
         download('bm-diagram.svg', new Blob([svg], { type: 'image/svg+xml' })); toast('Downloaded SVG');
       });
@@ -680,6 +681,7 @@ ${bundleJs}
     els.theme.addEventListener('change', function () { var f = brandFont(); if (f) els.font.value = f; render(); });
     els.font.addEventListener('change', render);
     els.curved.addEventListener('change', render);
+    els.animate.addEventListener('change', render);
     els.ratio.addEventListener('change', function () { state.geom = null; resetView(); if (state.frameEl) { sizeFrame(); updateChrome(); positionDiagram(); } });
     els.transparent.addEventListener('change', function () { if (state.frameEl) { paintFrameBg(state.frameEl); buildFrost(state.frameEl); } });
     els.shadow.addEventListener('change', function () { var h = state.frameEl && state.frameEl.querySelector('.frame-diagram'); if (h) h.classList.toggle('shadow', els.shadow.checked); });

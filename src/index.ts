@@ -261,6 +261,7 @@ export async function renderMermaidSVGAsync(
       transparent: options.transparent,
       edgeStyle: options.edgeStyle,
       themeCss: options.themeCss,
+      animateEdges: options.animateEdges,
     })
   }
 

@@ -65,3 +65,47 @@ export const BASE_FINISH_CSS = `
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace;
 }
 `
+
+// ============================================================================
+// CONNECTOR_ANIMATION_CSS — opt-in "flowing dash" animation for connectors.
+//
+// Appended to themeCSS when RenderOptions.animateEdges is set. Turns every
+// connector stroke into a dashed line whose dashes travel from source to
+// target — no path-length measurement needed, so one rule covers every edge.
+// Arrowheads are SVG markers and stay solid.
+//
+// The dash period (dasharray sum) must equal the keyframe offset so the loop
+// is seamless. Selectors cover flowchart/state edges (.edgePaths/.flowchart-
+// link/.transition), sequence messages (.messageLine0/1) and ER relationships.
+//
+// The CSS ships inside the SVG <style>, so exported SVGs stay animated in a
+// browser; PNG export rasterizes a static frame as usual.
+// ============================================================================
+
+export const CONNECTOR_ANIMATION_CSS = `
+.edgePaths path,
+.edgePath .path,
+.flowchart-link,
+.transition,
+.messageLine0,
+.messageLine1,
+.er .relationshipLine {
+  stroke-dasharray: 7 5;
+  stroke-linecap: round;
+  animation: bm-connector-flow 0.8s linear infinite;
+}
+@keyframes bm-connector-flow {
+  to { stroke-dashoffset: -12; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .edgePaths path,
+  .edgePath .path,
+  .flowchart-link,
+  .transition,
+  .messageLine0,
+  .messageLine1,
+  .er .relationshipLine {
+    animation: none;
+  }
+}
+`

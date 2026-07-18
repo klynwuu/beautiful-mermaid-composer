@@ -168,6 +168,12 @@ export interface RenderOptions {
    */
   edgeStyle?: ConnectorStyle
   /**
+   * Animate connectors with a flowing-dash effect (mermaid-rendered types
+   * only). The animation is plain CSS embedded in the SVG, so exported SVGs
+   * stay animated in a browser; PNG export is static. Default: false.
+   */
+  animateEdges?: boolean
+  /**
    * Per-theme mermaid `themeCSS` override (mermaid-rendered types only),
    * appended to the shared BASE_FINISH_CSS. Supplied by the active theme file.
    */
